@@ -114,18 +114,20 @@ const STORAGE_KEY = '@book_rating_theme';
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const systemScheme = useColorScheme();
   const [isDark, setIsDark] = useState(systemScheme !== 'light');
-  const [loaded, setLoaded] = useState(false);
 
-  // Load saved preference on mount
+  // Load saved preference on mount without blocking initial render
   useEffect(() => {
+    let isMounted = true;
     AsyncStorage.getItem(STORAGE_KEY)
       .then((stored) => {
+        if (!isMounted) return;
         if (stored === 'dark') setIsDark(true);
         else if (stored === 'light') setIsDark(false);
-        else setIsDark(systemScheme !== 'light');
       })
-      .catch(() => {})
-      .finally(() => setLoaded(true));
+      .catch(() => {});
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   const toggleTheme = () => {
@@ -133,8 +135,6 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     setIsDark(next);
     AsyncStorage.setItem(STORAGE_KEY, next ? 'dark' : 'light').catch(() => {});
   };
-
-  if (!loaded) return null;
 
   const theme = isDark ? DARK_THEME : LIGHT_THEME;
 

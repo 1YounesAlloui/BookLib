@@ -9,13 +9,24 @@
     "userInterfaceStyle": "automatic",
     "android": {
       "package": "com.booklib.app",
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0d0d10"
+      }
+    },
+    "splash": {
+      "image": "./assets/icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0d0d10"
     },
     "web": {
       "output": "static"
     },
     "plugins": [
-      "expo-router"
+      "expo-router",
+      "expo-image",
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true,
