@@ -39,43 +39,19 @@ export interface HomeFeed {
   genres: Record<string, Book[]>;
 }
 
-// Stable client session identifier for shelf isolation (prevents cross-user tampering)
-const CLIENT_SESSION_STORAGE_KEY = 'bookrating_client_session_id';
-
-export function getClientSessionId(): string {
-  if (typeof window !== 'undefined' && window.localStorage) {
-    let id = window.localStorage.getItem(CLIENT_SESSION_STORAGE_KEY);
-    if (!id) {
-      id = 'cs_' + Math.random().toString(36).substring(2, 12) + '_' + Date.now().toString(36);
-      try {
-        window.localStorage.setItem(CLIENT_SESSION_STORAGE_KEY, id);
-      } catch {
-        // ignore storage errors
-      }
-    }
-    return id;
-  }
-  return 'cs_default_session';
-}
-
 export async function apiFetch<T>(
   endpoint: string,
   options: RequestInit = {}
 ): Promise<T> {
   const url = `${BASE_URL}${endpoint}`;
-  const secureHeaders: Record<string, string> = {
-    'Content-Type': 'application/json',
-    Accept: 'application/json',
-    'X-Session-ID': getClientSessionId(),
-  };
-
   try {
     const response = await fetch(url, {
-      ...options,
       headers: {
-        ...secureHeaders,
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
         ...options.headers,
       },
+      ...options,
     });
 
     if (!response.ok) {
@@ -98,11 +74,12 @@ export async function apiFetch<T>(
       try {
         const fallbackUrl = `${REMOTE_URL}${endpoint}`;
         const fbResponse = await fetch(fallbackUrl, {
-          ...options,
           headers: {
-            ...secureHeaders,
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
             ...options.headers,
           },
+          ...options,
         });
         if (fbResponse.ok) {
           return fbResponse.json();
@@ -218,28 +195,17 @@ export async function saveBookToShelf(
   status: BookStatus,
   rating: number = 0
 ): Promise<Book> {
-  const cleanTitle = String(book.title || 'Unknown Title').slice(0, 255);
-  const cleanAuthors = String(
-    Array.isArray(book.authors) ? book.authors.join(', ') : book.authors ?? ''
-  ).slice(0, 255);
-  const cleanCategories = String(
-    Array.isArray(book.categories) ? book.categories.join(', ') : book.categories ?? ''
-  ).slice(0, 255);
-  const cleanDesc = String(book.description ?? '').slice(0, 10000);
-  const cleanThumb = String(book.thumbnail ?? '').slice(0, 500);
-  const cleanRating = Math.max(0, Math.min(5, Number(rating) || 0));
-
   return apiFetch<Book>('/books/save/', {
     method: 'POST',
     body: JSON.stringify({
-      google_book_id: encodeURIComponent(book.google_book_id),
-      title: cleanTitle,
-      authors: cleanAuthors,
-      description: cleanDesc,
-      thumbnail: cleanThumb,
-      categories: cleanCategories,
+      google_book_id: book.google_book_id,
+      title: book.title,
+      authors: Array.isArray(book.authors) ? book.authors.join(', ') : book.authors ?? '',
+      description: book.description ?? '',
+      thumbnail: book.thumbnail ?? '',
+      categories: Array.isArray(book.categories) ? book.categories.join(', ') : book.categories ?? '',
       status,
-      rating: cleanRating,
+      rating,
     }),
   });
 }

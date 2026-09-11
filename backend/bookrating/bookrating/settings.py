@@ -14,23 +14,11 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = os.getenv("SECRET_KEY")
-if not SECRET_KEY:
-    if os.getenv("DEBUG", "False").lower() in ("true", "1", "yes"):
-        SECRET_KEY = "django-insecure-dev-only-local-key-not-for-production-use"
-    else:
-        raise ValueError("SECRET_KEY environment variable must be set in production!")
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.getenv("DEBUG", "False").lower() in ("true", "1", "yes")
+DEBUG = os.getenv("DEBUG", False)
 
-# Defense-in-depth: Restrict allowed hosts to prevent Host Header Injection
-allowed_hosts_env = os.getenv("ALLOWED_HOSTS", "")
-if allowed_hosts_env:
-    ALLOWED_HOSTS = [h.strip() for h in allowed_hosts_env.split(",") if h.strip()]
-elif DEBUG:
-    ALLOWED_HOSTS = ["localhost", "127.0.0.1", "[::1]", "testserver"]
-else:
-    ALLOWED_HOSTS = ["bookrating-orpin.vercel.app", ".vercel.app"]
+ALLOWED_HOSTS = ['*']
 
 
 # Application definition
@@ -138,55 +126,13 @@ STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-# CORS Settings: Restrict to authorized origins
-CORS_ALLOW_ALL_ORIGINS = False
-CORS_ALLOWED_ORIGINS = [
-    "http://localhost:8081",
-    "http://127.0.0.1:8081",
-    "http://localhost:19006",
-    "http://127.0.0.1:19006",
-    "https://bookrating-orpin.vercel.app",
-]
-extra_cors = os.getenv("CORS_ALLOWED_ORIGINS", "")
-if extra_cors:
-    for origin in extra_cors.split(","):
-        o = origin.strip()
-        if o and o not in CORS_ALLOWED_ORIGINS:
-            CORS_ALLOWED_ORIGINS.append(o)
+# CORS Settings for React Native integration
+CORS_ALLOW_ALL_ORIGINS = True
 
-if DEBUG:
-    # Allow local network dev origins for Expo mobile testing
-    CORS_ALLOWED_ORIGIN_REGEXES = [
-        r"^http://192\.168\.\d+\.\d+:\d+$",
-        r"^http://10\.\d+\.\d+\.\d+:\d+$",
-        r"^http://localhost:\d+$",
-        r"^http://127\.0\.0\.1:\d+$",
-    ]
-
-# Defense-in-depth HTTP Security Headers
-SECURE_CONTENT_TYPE_NOSNIFF = True
-SECURE_BROWSER_XSS_FILTER = True
-X_FRAME_OPTIONS = 'DENY'
-SESSION_COOKIE_HTTPONLY = True
-SESSION_COOKIE_SECURE = not DEBUG
-CSRF_COOKIE_SECURE = not DEBUG
-
-if not DEBUG:
-    SECURE_HSTS_SECONDS = 31536000  # 1 year HSTS
-    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
-    SECURE_HSTS_PRELOAD = True
-    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
-
-# DRF Throttling & Permissions
+# DRF — no auth required globally while auth system isn't built yet
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [],
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.AllowAny',
     ],
-    'DEFAULT_THROTTLE_CLASSES': [
-        'rest_framework.throttling.AnonRateThrottle',
-    ],
-    'DEFAULT_THROTTLE_RATES': {
-        'anon': '120/minute',
-    },
 }
