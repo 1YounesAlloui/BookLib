@@ -13,8 +13,9 @@ import {
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { BookDetailModal, Book, BookStatus } from '../components/BookDetailModal';
-import { BookCard, StatusBadge, GOLD, BG, SURFACE, BORDER, TEXT, MUTED, formatAuthor } from '../components/BookCard';
+import { BookCard, formatAuthor, StatusBadge } from '../components/BookCard';
 import { fetchHomeFeed, HomeFeed } from '../services/api';
+import { useTheme, GOLD } from '../theme';
 
 const CARD_WIDTH = 126;
 const CARD_GAP = 12;
@@ -23,8 +24,10 @@ const CURATED_FALLBACK_HERO: Book = {
   google_book_id: 'hero_meditations',
   title: 'Meditations',
   authors: 'Marcus Aurelius',
-  thumbnail: 'https://books.google.com/books/content?id=9-8-AAAAIAAJ&printsec=frontcover&img=1&zoom=1&source=gbs_api',
-  description: 'Timeless stoic wisdom from the Roman Emperor on ethics, duty, and human nature.',
+  thumbnail:
+    'https://books.google.com/books/content?id=9-8-AAAAIAAJ&printsec=frontcover&img=1&zoom=1&source=gbs_api',
+  description:
+    'Timeless stoic wisdom from the Roman Emperor on ethics, duty, and human nature.',
   status: null,
 };
 
@@ -37,21 +40,38 @@ const SectionHeader = memo(function SectionHeader({
   iconColor: string;
   title: string;
 }) {
+  const { theme } = useTheme();
   return (
     <View style={styles.sectionHeader}>
-      <View style={[styles.sectionIconBg, { backgroundColor: `${iconColor}18` }]}>
+      <View
+        style={[
+          styles.sectionIconBg,
+          { backgroundColor: `${iconColor}18` },
+        ]}
+      >
         <Ionicons name={icon} size={15} color={iconColor} />
       </View>
-      <Text style={styles.sectionTitle}>{title}</Text>
+      <Text style={[styles.sectionTitle, { color: theme.text }]}>{title}</Text>
     </View>
   );
 });
 
 function HeroCard({ book, onPress }: { book: Book; onPress: () => void }) {
+  const { theme } = useTheme();
   const authorName = formatAuthor(book.authors);
 
   return (
-    <TouchableOpacity style={styles.hero} activeOpacity={0.88} onPress={onPress}>
+    <TouchableOpacity
+      style={[
+        styles.hero,
+        {
+          backgroundColor: theme.surface,
+          borderColor: theme.border,
+        },
+      ]}
+      activeOpacity={0.88}
+      onPress={onPress}
+    >
       {book.thumbnail ? (
         <Image
           source={{ uri: book.thumbnail }}
@@ -61,8 +81,14 @@ function HeroCard({ book, onPress }: { book: Book; onPress: () => void }) {
           cachePolicy="memory-disk"
         />
       ) : (
-        <View style={[styles.heroImage, styles.heroPlaceholder]}>
-          <Ionicons name="book-outline" size={56} color="#2e2e36" />
+        <View
+          style={[
+            styles.heroImage,
+            styles.heroPlaceholder,
+            { backgroundColor: theme.surfaceLight },
+          ]}
+        >
+          <Ionicons name="book-outline" size={56} color={theme.subtle} />
         </View>
       )}
       <View style={styles.heroOverlay}>
@@ -70,15 +96,18 @@ function HeroCard({ book, onPress }: { book: Book; onPress: () => void }) {
           <Ionicons name="sparkles" size={11} color={GOLD} />
           <Text style={styles.heroPillText}>Featured Book</Text>
         </View>
-        <Text style={styles.heroTitle} numberOfLines={2}>{book.title}</Text>
-        <Text style={styles.heroAuthor} numberOfLines={1}>{authorName}</Text>
+        <Text style={styles.heroTitle} numberOfLines={2}>
+          {book.title}
+        </Text>
+        <Text style={styles.heroAuthor} numberOfLines={1}>
+          {authorName}
+        </Text>
       </View>
       <StatusBadge status={book.status} />
     </TouchableOpacity>
   );
 }
 
-// Fast Horizontal List with pre-calculated layout items
 const BookHorizontalList = memo(function BookHorizontalList({
   data,
   onOpenBook,
@@ -121,6 +150,7 @@ const BookHorizontalList = memo(function BookHorizontalList({
 });
 
 export default function HomeScreen() {
+  const { theme } = useTheme();
   const [feed, setFeed] = useState<HomeFeed | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -140,8 +170,6 @@ export default function HomeScreen() {
         setLoading(true);
       }
       setError(null);
-      
-      // Pass isRefresh to backend to pull randomized books without cache
       const data = await fetchHomeFeed(isRefresh);
       setFeed(data);
     } catch {
@@ -189,30 +217,39 @@ export default function HomeScreen() {
 
   if (loading) {
     return (
-      <View style={styles.centered}>
+      <View style={[styles.centered, { backgroundColor: theme.bg }]}>
         <ActivityIndicator size="large" color={GOLD} />
-        <Text style={styles.stateText}>Curating your personal bookshelf…</Text>
+        <Text style={[styles.stateText, { color: theme.muted }]}>
+          Curating your personal bookshelf…
+        </Text>
       </View>
     );
   }
 
   if (error || !feed) {
     return (
-      <View style={styles.centered}>
+      <View style={[styles.centered, { backgroundColor: theme.bg }]}>
         <Ionicons name="alert-circle-outline" size={48} color="#ef4444" />
-        <Text style={[styles.stateText, { color: TEXT, marginBottom: 20 }]}>{error}</Text>
-        <TouchableOpacity style={styles.retryBtn} onPress={() => loadHomeFeed(false)}>
-          <Text style={styles.retryBtnText}>Retry</Text>
+        <Text style={[styles.stateText, { color: theme.text, marginBottom: 20 }]}>
+          {error}
+        </Text>
+        <TouchableOpacity
+          style={[styles.retryBtn, { backgroundColor: GOLD }]}
+          onPress={() => loadHomeFeed(false)}
+        >
+          <Text style={[styles.retryBtnText, { color: theme.bg }]}>Retry</Text>
         </TouchableOpacity>
       </View>
     );
   }
 
-  const hero = feed.trending.length > 0 ? feed.trending[0] : CURATED_FALLBACK_HERO;
-  const restTrending = feed.trending.length > 0 ? feed.trending.slice(1) : [];
+  const hero =
+    feed.trending.length > 0 ? feed.trending[0] : CURATED_FALLBACK_HERO;
+  const restTrending =
+    feed.trending.length > 0 ? feed.trending.slice(1) : [];
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: theme.bg }]}>
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scroll}
@@ -234,7 +271,11 @@ export default function HomeScreen() {
         {/* Trending */}
         {restTrending.length > 0 && (
           <View style={styles.section}>
-            <SectionHeader icon="flame" iconColor="#f97316" title="Trending Now" />
+            <SectionHeader
+              icon="flame"
+              iconColor="#f97316"
+              title="Trending Now"
+            />
             <BookHorizontalList data={restTrending} onOpenBook={openBook} />
           </View>
         )}
@@ -242,8 +283,15 @@ export default function HomeScreen() {
         {/* Recommended */}
         {feed.recommended.length > 0 && (
           <View style={styles.section}>
-            <SectionHeader icon="sparkles" iconColor={GOLD} title="Recommended Works" />
-            <BookHorizontalList data={feed.recommended} onOpenBook={openBook} />
+            <SectionHeader
+              icon="sparkles"
+              iconColor={GOLD}
+              title="Recommended Works"
+            />
+            <BookHorizontalList
+              data={feed.recommended}
+              onOpenBook={openBook}
+            />
           </View>
         )}
 
@@ -251,7 +299,11 @@ export default function HomeScreen() {
         {Object.entries(feed.genres).map(([genre, books]) =>
           !Array.isArray(books) || books.length === 0 ? null : (
             <View key={genre} style={styles.section}>
-              <SectionHeader icon="book-outline" iconColor={GOLD} title={genre} />
+              <SectionHeader
+                icon="book-outline"
+                iconColor={GOLD}
+                title={genre}
+              />
               <BookHorizontalList data={books} onOpenBook={openBook} />
             </View>
           )
@@ -269,13 +321,11 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: BG },
+  container: { flex: 1 },
   scroll: {
     paddingTop: 14,
     paddingBottom: 110,
   },
-
-  // Sections
   section: { marginBottom: 28 },
   sectionHeader: {
     flexDirection: 'row',
@@ -294,23 +344,20 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 16,
     fontWeight: '700',
-    color: TEXT,
     letterSpacing: 0.2,
   },
   row: { paddingHorizontal: 16, gap: CARD_GAP },
 
-  // Hero card
+  // Hero
   hero: {
     marginHorizontal: 16,
     height: 230,
     borderRadius: 18,
     overflow: 'hidden',
-    backgroundColor: SURFACE,
     borderWidth: 1,
-    borderColor: BORDER,
   },
   heroImage: { width: '100%', height: '100%' },
-  heroPlaceholder: { backgroundColor: '#181820', justifyContent: 'center', alignItems: 'center' },
+  heroPlaceholder: { justifyContent: 'center', alignItems: 'center' },
   heroOverlay: {
     position: 'absolute',
     bottom: 0,
@@ -341,22 +388,28 @@ const styles = StyleSheet.create({
     lineHeight: 25,
     marginBottom: 4,
   },
-  heroAuthor: { fontSize: 13, color: 'rgba(255, 255, 255, 0.65)', fontWeight: '500' },
+  heroAuthor: {
+    fontSize: 13,
+    color: 'rgba(255, 255, 255, 0.65)',
+    fontWeight: '500',
+  },
 
   // States
   centered: {
     flex: 1,
-    backgroundColor: BG,
     justifyContent: 'center',
     alignItems: 'center',
     padding: 24,
   },
-  stateText: { color: MUTED, marginTop: 12, textAlign: 'center', fontSize: 14 },
+  stateText: {
+    marginTop: 12,
+    textAlign: 'center',
+    fontSize: 14,
+  },
   retryBtn: {
     paddingHorizontal: 28,
     paddingVertical: 12,
-    backgroundColor: GOLD,
     borderRadius: 12,
   },
-  retryBtnText: { color: '#0d0d10', fontWeight: '700', fontSize: 14 },
+  retryBtnText: { fontWeight: '700', fontSize: 14 },
 });

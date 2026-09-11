@@ -3,8 +3,11 @@ import { View, Text, TouchableOpacity, StyleSheet, ViewStyle } from 'react-nativ
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { Book, BookStatus } from './BookDetailModal';
+import { useTheme, GOLD } from '../theme';
 
-export const GOLD = '#c8a96e';
+// ─── Static Exports for backward-compat ─────────────────────────────
+// (used as fallback if accessed outside ThemeProvider — resolved at runtime via hook in components)
+export { GOLD };
 export const BG = '#0d0d10';
 export const SURFACE = '#121216';
 export const SURFACE_LIGHT = '#1a1a22';
@@ -21,13 +24,38 @@ export const STATUS_CONFIG: Record<
   FAVORITE: { icon: 'heart', color: '#ef4444', label: 'Favorite' },
 };
 
-export function StatusBadge({ status, size = 'default' }: { status?: BookStatus; size?: 'default' | 'small' }) {
+export function StatusBadge({
+  status,
+  size = 'default',
+}: {
+  status?: BookStatus;
+  size?: 'default' | 'small';
+}) {
   if (!status || !STATUS_CONFIG[status]) return null;
   const { icon, color } = STATUS_CONFIG[status];
   const isSmall = size === 'small';
 
   return (
-    <View style={[styles.badge, isSmall && styles.badgeSmall, { backgroundColor: color }]}>
+    <View
+      style={[
+        {
+          position: 'absolute',
+          top: isSmall ? 4 : 6,
+          right: isSmall ? 4 : 6,
+          width: isSmall ? 16 : 20,
+          height: isSmall ? 16 : 20,
+          borderRadius: isSmall ? 8 : 10,
+          justifyContent: 'center',
+          alignItems: 'center',
+          backgroundColor: color,
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: 2 },
+          shadowOpacity: 0.4,
+          shadowRadius: 3,
+          elevation: 3,
+        },
+      ]}
+    >
       <Ionicons name={icon} size={isSmall ? 8 : 10} color="#fff" />
     </View>
   );
@@ -56,6 +84,7 @@ export const BookCard = memo(function BookCard({
   variant = 'horizontal',
   style,
 }: BookCardProps) {
+  const { theme } = useTheme();
   const handlePress = useCallback(() => {
     onPress(item);
   }, [item, onPress]);
@@ -67,8 +96,18 @@ export const BookCard = memo(function BookCard({
   return (
     <TouchableOpacity
       style={[
-        styles.card,
-        isGrid4 ? styles.grid4Card : isGrid ? styles.gridCard : styles.horizontalCard,
+        {
+          backgroundColor: theme.surface,
+          borderRadius: isGrid4 ? 10 : 12,
+          borderWidth: 1,
+          borderColor: theme.border,
+          overflow: 'hidden',
+        },
+        isGrid4
+          ? { width: '23%', marginBottom: 12 }
+          : isGrid
+          ? { width: '48%', marginBottom: 14 }
+          : { width: 126 },
         width ? { width: width as any } : undefined,
         style,
       ]}
@@ -77,12 +116,17 @@ export const BookCard = memo(function BookCard({
     >
       <View
         style={[
-          styles.coverWrapper,
+          {
+            position: 'relative',
+            width: '100%',
+            backgroundColor: theme.surfaceLight,
+            overflow: 'hidden',
+          },
           isGrid4
-            ? styles.grid4CoverWrapper
+            ? { height: 110 }
             : isGrid
-            ? styles.gridCoverWrapper
-            : styles.horizontalCoverWrapper,
+            ? { height: 196 }
+            : { height: 172 },
         ]}
       >
         {item.thumbnail ? (
@@ -95,21 +139,47 @@ export const BookCard = memo(function BookCard({
           />
         ) : (
           <View style={[styles.coverImage, styles.placeholderCover]}>
-            <Ionicons name="book-outline" size={isGrid4 ? 18 : 28} color="#333340" />
+            <Ionicons
+              name="book-outline"
+              size={isGrid4 ? 18 : 28}
+              color={theme.subtle}
+            />
           </View>
         )}
         <StatusBadge status={item.status} size={isGrid4 ? 'small' : 'default'} />
       </View>
 
-      <View style={[styles.infoContainer, isGrid4 && styles.grid4InfoContainer]}>
+      <View
+        style={[
+          { padding: 8 },
+          isGrid4 && { padding: 5, paddingTop: 5, paddingBottom: 6 },
+        ]}
+      >
         <Text
-          style={[styles.cardTitle, isGrid4 && styles.grid4Title]}
+          style={[
+            {
+              fontSize: 13,
+              fontWeight: '600',
+              color: theme.text,
+              marginBottom: 3,
+              lineHeight: 17,
+            },
+            isGrid4 && {
+              fontSize: 10,
+              fontWeight: '600',
+              lineHeight: 13,
+              marginBottom: 2,
+            },
+          ]}
           numberOfLines={2}
         >
           {item.title}
         </Text>
         <Text
-          style={[styles.cardAuthor, isGrid4 && styles.grid4Author]}
+          style={[
+            { fontSize: 11, color: theme.muted, fontWeight: '500' },
+            isGrid4 && { fontSize: 9, lineHeight: 12 },
+          ]}
           numberOfLines={1}
         >
           {authorName}
@@ -120,99 +190,13 @@ export const BookCard = memo(function BookCard({
 });
 
 const styles = StyleSheet.create({
-  card: {
-    backgroundColor: SURFACE,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: BORDER,
-    overflow: 'hidden',
-  },
-  horizontalCard: {
-    width: 126,
-  },
-  gridCard: {
-    width: '48%',
-    marginBottom: 14,
-  },
-  grid4Card: {
-    width: '23%',
-    borderRadius: 10,
-    marginBottom: 12,
-  },
-  coverWrapper: {
-    position: 'relative',
-    width: '100%',
-    backgroundColor: SURFACE_LIGHT,
-    overflow: 'hidden',
-  },
-  horizontalCoverWrapper: {
-    height: 172,
-  },
-  gridCoverWrapper: {
-    height: 196,
-  },
-  grid4CoverWrapper: {
-    height: 110,
-  },
   coverImage: {
     width: '100%',
     height: '100%',
   },
   placeholderCover: {
-    backgroundColor: '#181820',
+    backgroundColor: 'transparent',
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  badge: {
-    position: 'absolute',
-    top: 6,
-    right: 6,
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.4,
-    shadowRadius: 3,
-    elevation: 3,
-  },
-  badgeSmall: {
-    top: 4,
-    right: 4,
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-  },
-  infoContainer: {
-    padding: 8,
-  },
-  grid4InfoContainer: {
-    padding: 5,
-    paddingTop: 5,
-    paddingBottom: 6,
-  },
-  cardTitle: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: TEXT,
-    marginBottom: 3,
-    lineHeight: 17,
-  },
-  grid4Title: {
-    fontSize: 10,
-    fontWeight: '600',
-    lineHeight: 13,
-    marginBottom: 2,
-  },
-  cardAuthor: {
-    fontSize: 11,
-    color: MUTED,
-    fontWeight: '500',
-  },
-  grid4Author: {
-    fontSize: 9,
-    lineHeight: 12,
   },
 });

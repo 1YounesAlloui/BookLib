@@ -14,8 +14,9 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { BookDetailModal, Book, BookStatus } from '../components/BookDetailModal';
-import { BookCard, GOLD, BG, SURFACE, SURFACE_LIGHT, BORDER, TEXT, MUTED } from '../components/BookCard';
+import { BookCard } from '../components/BookCard';
 import { searchBooks } from '../services/api';
+import { useTheme, GOLD } from '../theme';
 
 const CATEGORIES = [
   'All',
@@ -75,7 +76,7 @@ const DEFAULT_FILTERS: FilterOptions = {
   novelType: 'All',
 };
 
-// ─── Taxonomy Keyword Mappings for Accurate Filtering ───────────────
+// ─── Taxonomy Keyword Mappings ────────────────────────────────────────
 
 const CATEGORY_KEYWORDS: Record<string, string[]> = {
   All: [],
@@ -119,6 +120,8 @@ const WRITING_STYLE_KEYWORDS: Record<string, string[]> = {
 };
 
 export default function ExploreScreen() {
+  const { theme } = useTheme();
+
   // Input vs Active Search Query
   const [inputText, setInputText] = useState('');
   const [activeQuery, setActiveQuery] = useState('');
@@ -138,15 +141,14 @@ export default function ExploreScreen() {
   const [modalVisible, setModalVisible] = useState(false);
   const [filterModalVisible, setFilterModalVisible] = useState(false);
 
-  // Filters State
+  // Filters
   const [activeFilters, setActiveFilters] = useState<FilterOptions>(DEFAULT_FILTERS);
   const [tempFilters, setTempFilters] = useState<FilterOptions>(DEFAULT_FILTERS);
 
-  // Refs for debouncing & network cancellation
+  // Refs
   const abortControllerRef = useRef<AbortController | null>(null);
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Check if non-default filters or non-empty query are active
   const isFilterActive = useMemo(() => {
     return (
       activeFilters.sortBy !== DEFAULT_FILTERS.sortBy ||
@@ -156,7 +158,6 @@ export default function ExploreScreen() {
     );
   }, [activeFilters]);
 
-  // Centralized fetch function
   const performFetch = useCallback(
     async (
       q: string,
@@ -165,7 +166,6 @@ export default function ExploreScreen() {
       pageNum: number,
       isLoadMore = false
     ) => {
-      // Abort previous in-flight request
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
       }
@@ -212,7 +212,6 @@ export default function ExploreScreen() {
     []
   );
 
-  // Trigger search execution immediately (canceling any pending debounce)
   const executeSearch = useCallback(
     (textToSearch: string, scope = searchScope, genre = activeFilters.genre) => {
       if (debounceTimerRef.current) {
@@ -224,69 +223,51 @@ export default function ExploreScreen() {
     [searchScope, activeFilters.genre, performFetch]
   );
 
-  // Debounced search when user types in search box (600ms debounce)
   const handleInputChange = (text: string) => {
     setInputText(text);
-
-    if (debounceTimerRef.current) {
-      clearTimeout(debounceTimerRef.current);
-    }
-
-    // Wait until user finishes typing before executing search
+    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
     debounceTimerRef.current = setTimeout(() => {
       executeSearch(text, searchScope, activeFilters.genre);
     }, 600);
   };
 
-  // Immediate execution on keyboard Enter / Search
   const handleSubmitSearch = () => {
     executeSearch(inputText, searchScope, activeFilters.genre);
   };
 
-  // Clear search input and instantly reset search results
   const handleClearSearch = () => {
-    if (debounceTimerRef.current) {
-      clearTimeout(debounceTimerRef.current);
-    }
+    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
     setInputText('');
     setActiveQuery('');
     performFetch('', searchScope, activeFilters.genre, 1, false);
   };
 
-  // Change Search Scope ('all' | 'title' | 'author')
   const handleScopeChange = (newScope: SearchScope) => {
     setSearchScope(newScope);
     executeSearch(inputText, newScope, activeFilters.genre);
   };
 
-  // Category Pill Selection
   const handleSelectCategory = (cat: string) => {
     setActiveFilters((prev) => ({ ...prev, genre: cat }));
     executeSearch(inputText, searchScope, cat);
   };
 
-  // Initial load
   useEffect(() => {
     performFetch(activeQuery, searchScope, activeFilters.genre, 1, false);
     return () => {
-      if (debounceTimerRef.current) {
-        clearTimeout(debounceTimerRef.current);
-      }
+      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
     };
   }, []);
 
-  // Load more on scroll reached end
   const handleLoadMore = () => {
     if (!loading && !loadingMore && hasMore) {
       performFetch(activeQuery, searchScope, activeFilters.genre, page + 1, true);
     }
   };
 
-  // Filter and Sort Books
   const filteredAndSortedBooks = useMemo(() => {
     let list = [...books];
 
-    // Helper: case-insensitive partial match for search query
     const matchTokens = (target: string, query: string): boolean => {
       const tokens = query.toLowerCase().trim().split(/\s+/).filter(Boolean);
       if (tokens.length === 0) return true;
@@ -294,7 +275,6 @@ export default function ExploreScreen() {
       return tokens.every((tok) => lowerTarget.includes(tok));
     };
 
-    // 1. Apply Active Query & Scope matching
     if (activeQuery.trim()) {
       const q = activeQuery.trim();
       list = list.filter((b) => {
@@ -302,14 +282,8 @@ export default function ExploreScreen() {
         const authors = b.authors || '';
         const desc = b.description || '';
         const cats = b.categories || '';
-
-        if (searchScope === 'title') {
-          return matchTokens(title, q);
-        }
-        if (searchScope === 'author') {
-          return matchTokens(authors, q);
-        }
-        // Scope === 'all': match in title OR author OR categories OR description
+        if (searchScope === 'title') return matchTokens(title, q);
+        if (searchScope === 'author') return matchTokens(authors, q);
         return (
           matchTokens(title, q) ||
           matchTokens(authors, q) ||
@@ -319,7 +293,6 @@ export default function ExploreScreen() {
       });
     }
 
-    // 2. Genre / Category Filter (using rich taxonomy keyword matching)
     if (activeFilters.genre !== 'All') {
       const keywords = CATEGORY_KEYWORDS[activeFilters.genre] || [activeFilters.genre.toLowerCase()];
       list = list.filter((b) => {
@@ -328,7 +301,6 @@ export default function ExploreScreen() {
       });
     }
 
-    // 3. Novel / Book Format Filter
     if (activeFilters.novelType !== 'All') {
       const keywords = NOVEL_TYPE_KEYWORDS[activeFilters.novelType] || [activeFilters.novelType.toLowerCase()];
       list = list.filter((b) => {
@@ -337,7 +309,6 @@ export default function ExploreScreen() {
       });
     }
 
-    // 4. Writing Style & Tone Filter
     if (activeFilters.writingStyle !== 'All') {
       const keywords = WRITING_STYLE_KEYWORDS[activeFilters.writingStyle] || [activeFilters.writingStyle.toLowerCase()];
       list = list.filter((b) => {
@@ -346,7 +317,6 @@ export default function ExploreScreen() {
       });
     }
 
-    // 5. Sort Results
     if (activeFilters.sortBy === 'newest') {
       list.sort((a, b) => {
         const yearA = parseInt(a.publishedDate || '0', 10) || 0;
@@ -356,7 +326,6 @@ export default function ExploreScreen() {
     } else if (activeFilters.sortBy === 'title') {
       list.sort((a, b) => (a.title || '').localeCompare(b.title || ''));
     } else if (activeFilters.sortBy === 'relevance' && activeQuery.trim()) {
-      // Prioritize title/author matches when sorting by relevance
       const qLower = activeQuery.trim().toLowerCase();
       list.sort((a, b) => {
         const aTitleMatch = (a.title || '').toLowerCase().includes(qLower);
@@ -370,7 +339,6 @@ export default function ExploreScreen() {
     return list;
   }, [books, activeQuery, searchScope, activeFilters]);
 
-  // Book Status and Shelf Management
   const handleStatusChange = async (
     bookId: string,
     newStatus: BookStatus,
@@ -390,7 +358,6 @@ export default function ExploreScreen() {
     }
   };
 
-  // Filter Modal Controls
   const openFilterModal = () => {
     setTempFilters({ ...activeFilters });
     setFilterModalVisible(true);
@@ -406,9 +373,8 @@ export default function ExploreScreen() {
   };
 
   const resetFilters = () => {
-    const defaultFilters = DEFAULT_FILTERS;
-    setTempFilters(defaultFilters);
-    setActiveFilters(defaultFilters);
+    setTempFilters(DEFAULT_FILTERS);
+    setActiveFilters(DEFAULT_FILTERS);
     setFilterModalVisible(false);
     executeSearch(inputText, searchScope, 'All');
   };
@@ -425,19 +391,61 @@ export default function ExploreScreen() {
     [handleCardPress]
   );
 
+  // ─── Chip helper ─────────────────────────────────────────────────
+  const Chip = ({
+    label,
+    active,
+    onPress,
+  }: {
+    label: string;
+    active: boolean;
+    onPress: () => void;
+  }) => (
+    <TouchableOpacity
+      style={[
+        {
+          paddingHorizontal: 12,
+          paddingVertical: 7,
+          borderRadius: 10,
+          borderWidth: 1,
+          backgroundColor: active ? `${GOLD}22` : theme.surfaceLight,
+          borderColor: active ? GOLD : theme.border,
+        },
+      ]}
+      onPress={onPress}
+      activeOpacity={0.7}
+    >
+      <Text
+        style={{
+          fontSize: 12,
+          color: active ? GOLD : theme.muted,
+          fontWeight: active ? '700' : '500',
+        }}
+      >
+        {label}
+      </Text>
+    </TouchableOpacity>
+  );
+
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: theme.bg }]}>
       {/* Search Header Row */}
       <View style={styles.searchHeaderRow}>
-        <View style={[styles.searchBar, focused && styles.searchBarFocused]}>
+        <View
+          style={[
+            styles.searchBar,
+            { backgroundColor: theme.searchBg, borderColor: theme.border },
+            focused && { borderColor: GOLD },
+          ]}
+        >
           <Ionicons
             name="search-outline"
             size={18}
-            color={focused ? GOLD : MUTED}
+            color={focused ? GOLD : theme.muted}
             style={{ marginRight: 2 }}
           />
           <TextInput
-            style={styles.searchInput}
+            style={[styles.searchInput, { color: theme.text }]}
             placeholder={
               searchScope === 'author'
                 ? 'Search by author (e.g. Orwell, Rowling)…'
@@ -445,7 +453,7 @@ export default function ExploreScreen() {
                 ? 'Search by title (e.g. Dune, 1984)…'
                 : 'Search title, author, or keywords…'
             }
-            placeholderTextColor={MUTED}
+            placeholderTextColor={theme.muted}
             value={inputText}
             onChangeText={handleInputChange}
             onSubmitEditing={handleSubmitSearch}
@@ -461,53 +469,86 @@ export default function ExploreScreen() {
               onPress={handleClearSearch}
               style={{ marginRight: 4 }}
             >
-              <Ionicons name="close-circle" size={18} color={MUTED} />
+              <Ionicons name="close-circle" size={18} color={theme.muted} />
             </TouchableOpacity>
           )}
         </View>
 
-        {/* Dedicated Search Action Button */}
+        {/* Search Button */}
         <TouchableOpacity
-          style={styles.searchBtn}
+          style={[styles.searchBtn, { backgroundColor: GOLD }]}
           activeOpacity={0.8}
           onPress={handleSubmitSearch}
         >
           {loading ? (
-            <ActivityIndicator size="small" color={BG} />
+            <ActivityIndicator size="small" color={theme.bg} />
           ) : (
-            <Ionicons name="arrow-forward" size={18} color={BG} />
+            <Ionicons name="arrow-forward" size={18} color={theme.bg} />
           )}
         </TouchableOpacity>
 
-        {/* Filter Trigger Button */}
+        {/* Filter Button */}
         <TouchableOpacity
-          style={[styles.filterBtn, isFilterActive && styles.filterBtnActive]}
+          style={[
+            styles.filterBtn,
+            {
+              backgroundColor: isFilterActive ? GOLD : theme.surface,
+              borderColor: isFilterActive ? GOLD : theme.border,
+            },
+          ]}
           activeOpacity={0.75}
           onPress={openFilterModal}
         >
           <Ionicons
             name="options-outline"
             size={20}
-            color={isFilterActive ? BG : TEXT}
+            color={isFilterActive ? theme.bg : theme.text}
           />
-          {isFilterActive && <View style={styles.activeDot} />}
+          {isFilterActive && (
+            <View
+              style={[
+                styles.activeDot,
+                { backgroundColor: '#ef4444' },
+              ]}
+            />
+          )}
         </TouchableOpacity>
       </View>
 
-      {/* Scope Selector: [ All | Title | Author ] */}
+      {/* Scope Selector */}
       <View style={styles.scopeRow}>
-        <Text style={styles.scopeLabel}>Search In:</Text>
-        <View style={styles.scopeSegment}>
+        <Text style={[styles.scopeLabel, { color: theme.muted }]}>
+          Search In:
+        </Text>
+        <View
+          style={[
+            styles.scopeSegment,
+            { backgroundColor: theme.surface, borderColor: theme.border },
+          ]}
+        >
           {(['all', 'title', 'author'] as SearchScope[]).map((scope) => {
             const active = searchScope === scope;
             return (
               <TouchableOpacity
                 key={scope}
-                style={[styles.scopeBtn, active && styles.scopeBtnActive]}
+                style={[
+                  styles.scopeBtn,
+                  active && {
+                    backgroundColor: `${GOLD}26`,
+                    borderWidth: 1,
+                    borderColor: GOLD,
+                  },
+                ]}
                 onPress={() => handleScopeChange(scope)}
                 activeOpacity={0.75}
               >
-                <Text style={[styles.scopeBtnText, active && styles.scopeBtnTextActive]}>
+                <Text
+                  style={[
+                    styles.scopeBtnText,
+                    { color: active ? GOLD : theme.muted },
+                    active && { fontWeight: '700' },
+                  ]}
+                >
                   {scope === 'all' ? 'All' : scope === 'title' ? 'Book Title' : 'Author'}
                 </Text>
               </TouchableOpacity>
@@ -516,7 +557,7 @@ export default function ExploreScreen() {
         </View>
       </View>
 
-      {/* Category Pills Row */}
+      {/* Category Pills */}
       <View style={styles.pillsWrapper}>
         <ScrollView
           horizontal
@@ -529,11 +570,23 @@ export default function ExploreScreen() {
             return (
               <TouchableOpacity
                 key={cat}
-                style={[styles.pill, active && styles.pillActive]}
+                style={[
+                  styles.pill,
+                  {
+                    backgroundColor: active ? `${GOLD}20` : theme.surface,
+                    borderColor: active ? GOLD : theme.border,
+                  },
+                ]}
                 onPress={() => handleSelectCategory(cat)}
                 activeOpacity={0.7}
               >
-                <Text style={[styles.pillText, active && styles.pillTextActive]}>
+                <Text
+                  style={[
+                    styles.pillText,
+                    { color: active ? GOLD : theme.muted },
+                    active && { fontWeight: '700' },
+                  ]}
+                >
                   {cat}
                 </Text>
               </TouchableOpacity>
@@ -542,11 +595,12 @@ export default function ExploreScreen() {
         </ScrollView>
       </View>
 
-      {/* Results Header Status & Active Filters Tag */}
+      {/* Results Status Bar */}
       {(isFilterActive || activeQuery.trim().length > 0) && (
         <View style={styles.statusBar}>
-          <Text style={styles.resultsCount}>
-            {filteredAndSortedBooks.length} {filteredAndSortedBooks.length === 1 ? 'book' : 'books'} found
+          <Text style={[styles.resultsCount, { color: theme.muted }]}>
+            {filteredAndSortedBooks.length}{' '}
+            {filteredAndSortedBooks.length === 1 ? 'book' : 'books'} found
             {activeQuery.trim() ? ` for "${activeQuery}"` : ''}
           </Text>
           <TouchableOpacity
@@ -556,47 +610,67 @@ export default function ExploreScreen() {
               resetFilters();
             }}
           >
-            <Text style={styles.clearAllText}>Clear all</Text>
+            <Text style={[styles.clearAllText, { color: GOLD }]}>Clear all</Text>
             <Ionicons name="close-circle-outline" size={14} color={GOLD} />
           </TouchableOpacity>
         </View>
       )}
 
-      {/* Main Results Container */}
+      {/* Results */}
       {loading && books.length === 0 ? (
         <View style={styles.centered}>
           <ActivityIndicator size="large" color={GOLD} />
-          <Text style={styles.stateText}>Finding great books…</Text>
+          <Text style={[styles.stateText, { color: theme.muted }]}>
+            Finding great books…
+          </Text>
         </View>
       ) : error ? (
         <View style={styles.centered}>
           <Ionicons name="alert-circle-outline" size={44} color="#ef4444" />
-          <Text style={[styles.stateText, { color: TEXT, marginBottom: 16 }]}>{error}</Text>
-          <TouchableOpacity
-            style={styles.retryBtn}
-            onPress={() => performFetch(activeQuery, searchScope, activeFilters.genre, 1, false)}
+          <Text
+            style={[styles.stateText, { color: theme.text, marginBottom: 16 }]}
           >
-            <Text style={styles.retryBtnText}>Retry</Text>
+            {error}
+          </Text>
+          <TouchableOpacity
+            style={[styles.retryBtn, { backgroundColor: GOLD }]}
+            onPress={() =>
+              performFetch(activeQuery, searchScope, activeFilters.genre, 1, false)
+            }
+          >
+            <Text style={[styles.retryBtnText, { color: theme.bg }]}>Retry</Text>
           </TouchableOpacity>
         </View>
       ) : filteredAndSortedBooks.length === 0 ? (
         <View style={styles.centered}>
-          <Ionicons name="search-outline" size={54} color="#272730" />
-          <Text style={styles.emptyTitle}>No matching books found</Text>
-          <Text style={styles.stateText}>
+          <Ionicons name="search-outline" size={54} color={theme.subtle} />
+          <Text style={[styles.emptyTitle, { color: theme.text }]}>
+            No matching books found
+          </Text>
+          <Text style={[styles.stateText, { color: theme.muted }]}>
             {activeQuery.trim()
-              ? `No books matched "${activeQuery}" in ${searchScope === 'all' ? 'any field' : searchScope}.`
+              ? `No books matched "${activeQuery}" in ${
+                  searchScope === 'all' ? 'any field' : searchScope
+                }.`
               : 'Try selecting a different category or clearing active filters.'}
           </Text>
           {(isFilterActive || activeQuery.trim().length > 0) && (
             <TouchableOpacity
-              style={styles.clearFilterBtn}
+              style={[
+                styles.clearFilterBtn,
+                {
+                  backgroundColor: theme.surfaceLight,
+                  borderColor: theme.border,
+                },
+              ]}
               onPress={() => {
                 handleClearSearch();
                 resetFilters();
               }}
             >
-              <Text style={styles.clearFilterBtnText}>Reset Search & Filters</Text>
+              <Text style={[styles.clearFilterBtnText, { color: GOLD }]}>
+                Reset Search & Filters
+              </Text>
             </TouchableOpacity>
           )}
         </View>
@@ -621,7 +695,6 @@ export default function ExploreScreen() {
         />
       )}
 
-      {/* Book Detail Modal */}
       <BookDetailModal
         visible={modalVisible}
         book={selectedBook}
@@ -629,20 +702,38 @@ export default function ExploreScreen() {
         onStatusChange={handleStatusChange}
       />
 
-      {/* Filter Bottom Sheet Modal */}
+      {/* Filter Modal */}
       <Modal
         visible={filterModalVisible}
         animationType="slide"
         transparent
         onRequestClose={() => setFilterModalVisible(false)}
       >
-        <View style={styles.modalBackdrop}>
-          <Pressable style={StyleSheet.absoluteFill} onPress={() => setFilterModalVisible(false)} />
-          <View style={styles.modalContent}>
+        <View
+          style={[
+            styles.modalBackdrop,
+            { backgroundColor: theme.modalBackdrop },
+          ]}
+        >
+          <Pressable
+            style={StyleSheet.absoluteFill}
+            onPress={() => setFilterModalVisible(false)}
+          />
+          <View
+            style={[
+              styles.modalContent,
+              {
+                backgroundColor: theme.surface,
+                borderColor: theme.border,
+              },
+            ]}
+          >
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Refine Books</Text>
+              <Text style={[styles.modalTitle, { color: theme.text }]}>
+                Refine Books
+              </Text>
               <TouchableOpacity onPress={() => setFilterModalVisible(false)}>
-                <Ionicons name="close" size={22} color={MUTED} />
+                <Ionicons name="close" size={22} color={theme.muted} />
               </TouchableOpacity>
             </View>
 
@@ -651,88 +742,117 @@ export default function ExploreScreen() {
               style={styles.modalScroll}
               nestedScrollEnabled={true}
             >
-              {/* Sort Options */}
-              <Text style={styles.filterSectionTitle}>Sort Order</Text>
+              {/* Sort */}
+              <Text
+                style={[styles.filterSectionTitle, { color: theme.muted }]}
+              >
+                Sort Order
+              </Text>
               <View style={styles.chipRow}>
                 {[
                   { id: 'relevance', label: 'Relevance' },
                   { id: 'newest', label: 'Newest' },
                   { id: 'title', label: 'Alphabetical' },
-                ].map((item) => {
-                  const active = tempFilters.sortBy === item.id;
-                  return (
-                    <TouchableOpacity
-                      key={item.id}
-                      style={[styles.chip, active && styles.chipActive]}
-                      onPress={() => setTempFilters({ ...tempFilters, sortBy: item.id as SortOption })}
-                    >
-                      <Text style={[styles.chipText, active && styles.chipTextActive]}>
-                        {item.label}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
+                ].map((item) => (
+                  <Chip
+                    key={item.id}
+                    label={item.label}
+                    active={tempFilters.sortBy === item.id}
+                    onPress={() =>
+                      setTempFilters({
+                        ...tempFilters,
+                        sortBy: item.id as SortOption,
+                      })
+                    }
+                  />
+                ))}
               </View>
 
-              {/* Genre / Category */}
-              <Text style={styles.filterSectionTitle}>Genre & Subject</Text>
+              {/* Genre */}
+              <Text
+                style={[styles.filterSectionTitle, { color: theme.muted }]}
+              >
+                Genre & Subject
+              </Text>
               <View style={styles.chipWrapRow}>
-                {CATEGORIES.map((cat) => {
-                  const active = tempFilters.genre === cat;
-                  return (
-                    <TouchableOpacity
-                      key={cat}
-                      style={[styles.chip, active && styles.chipActive]}
-                      onPress={() => setTempFilters({ ...tempFilters, genre: cat })}
-                    >
-                      <Text style={[styles.chipText, active && styles.chipTextActive]}>{cat}</Text>
-                    </TouchableOpacity>
-                  );
-                })}
+                {CATEGORIES.map((cat) => (
+                  <Chip
+                    key={cat}
+                    label={cat}
+                    active={tempFilters.genre === cat}
+                    onPress={() =>
+                      setTempFilters({ ...tempFilters, genre: cat })
+                    }
+                  />
+                ))}
               </View>
 
-              {/* Novel / Book Format */}
-              <Text style={styles.filterSectionTitle}>Novel & Book Format</Text>
+              {/* Format */}
+              <Text
+                style={[styles.filterSectionTitle, { color: theme.muted }]}
+              >
+                Novel & Book Format
+              </Text>
               <View style={styles.chipWrapRow}>
-                {NOVEL_TYPES.map((type) => {
-                  const active = tempFilters.novelType === type;
-                  return (
-                    <TouchableOpacity
-                      key={type}
-                      style={[styles.chip, active && styles.chipActive]}
-                      onPress={() => setTempFilters({ ...tempFilters, novelType: type })}
-                    >
-                      <Text style={[styles.chipText, active && styles.chipTextActive]}>{type}</Text>
-                    </TouchableOpacity>
-                  );
-                })}
+                {NOVEL_TYPES.map((type) => (
+                  <Chip
+                    key={type}
+                    label={type}
+                    active={tempFilters.novelType === type}
+                    onPress={() =>
+                      setTempFilters({ ...tempFilters, novelType: type })
+                    }
+                  />
+                ))}
               </View>
 
               {/* Writing Style */}
-              <Text style={styles.filterSectionTitle}>Writing Style & Tone</Text>
+              <Text
+                style={[styles.filterSectionTitle, { color: theme.muted }]}
+              >
+                Writing Style & Tone
+              </Text>
               <View style={styles.chipWrapRow}>
-                {WRITING_STYLES.map((style) => {
-                  const active = tempFilters.writingStyle === style;
-                  return (
-                    <TouchableOpacity
-                      key={style}
-                      style={[styles.chip, active && styles.chipActive]}
-                      onPress={() => setTempFilters({ ...tempFilters, writingStyle: style })}
-                    >
-                      <Text style={[styles.chipText, active && styles.chipTextActive]}>{style}</Text>
-                    </TouchableOpacity>
-                  );
-                })}
+                {WRITING_STYLES.map((style) => (
+                  <Chip
+                    key={style}
+                    label={style}
+                    active={tempFilters.writingStyle === style}
+                    onPress={() =>
+                      setTempFilters({ ...tempFilters, writingStyle: style })
+                    }
+                  />
+                ))}
               </View>
             </ScrollView>
 
-            {/* Filter Actions */}
-            <View style={styles.modalActions}>
-              <TouchableOpacity style={styles.resetBtn} onPress={resetFilters}>
-                <Text style={styles.resetBtnText}>Reset All</Text>
+            <View
+              style={[
+                styles.modalActions,
+                { paddingBottom: Platform.OS === 'ios' ? 16 : 0 },
+              ]}
+            >
+              <TouchableOpacity
+                style={[
+                  styles.resetBtn,
+                  {
+                    backgroundColor: theme.surfaceLight,
+                    borderColor: theme.border,
+                  },
+                ]}
+                onPress={resetFilters}
+              >
+                <Text style={[styles.resetBtnText, { color: theme.text }]}>
+                  Reset All
+                </Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.applyBtn} onPress={applyFilters}>
-                <Text style={styles.applyBtnText}>Apply Filters</Text>
+              <TouchableOpacity
+                style={[styles.applyBtn, { backgroundColor: GOLD }]}
+                onPress={applyFilters}
+              >
+                <Text style={[styles.applyBtnText, { color: theme.bg }]}>
+                  Apply Filters
+                </Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -743,7 +863,7 @@ export default function ExploreScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: BG, paddingTop: 14 },
+  container: { flex: 1, paddingTop: 14 },
 
   searchHeaderRow: {
     flexDirection: 'row',
@@ -760,16 +880,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     height: 46,
     borderRadius: 14,
-    backgroundColor: SURFACE,
     borderWidth: 1,
-    borderColor: BORDER,
-  },
-  searchBarFocused: {
-    borderColor: GOLD,
   },
   searchInput: {
     flex: 1,
-    color: TEXT,
     fontSize: 14,
     paddingVertical: 0,
   },
@@ -777,7 +891,6 @@ const styles = StyleSheet.create({
     width: 44,
     height: 46,
     borderRadius: 14,
-    backgroundColor: GOLD,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -785,16 +898,10 @@ const styles = StyleSheet.create({
     width: 44,
     height: 46,
     borderRadius: 14,
-    backgroundColor: SURFACE,
     borderWidth: 1,
-    borderColor: BORDER,
     justifyContent: 'center',
     alignItems: 'center',
     position: 'relative',
-  },
-  filterBtnActive: {
-    backgroundColor: GOLD,
-    borderColor: GOLD,
   },
   activeDot: {
     position: 'absolute',
@@ -803,10 +910,8 @@ const styles = StyleSheet.create({
     width: 7,
     height: 7,
     borderRadius: 3.5,
-    backgroundColor: '#ef4444',
   },
 
-  // Scope Selector Row
   scopeRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -816,15 +921,12 @@ const styles = StyleSheet.create({
   },
   scopeLabel: {
     fontSize: 12,
-    color: MUTED,
     fontWeight: '600',
   },
   scopeSegment: {
     flexDirection: 'row',
-    backgroundColor: SURFACE,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: BORDER,
     padding: 2,
     gap: 2,
   },
@@ -833,24 +935,12 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
     borderRadius: 8,
   },
-  scopeBtnActive: {
-    backgroundColor: `${GOLD}26`,
-    borderWidth: 1,
-    borderColor: GOLD,
-  },
   scopeBtnText: {
     fontSize: 12,
-    color: MUTED,
     fontWeight: '500',
   },
-  scopeBtnTextActive: {
-    color: GOLD,
-    fontWeight: '700',
-  },
 
-  pillsWrapper: {
-    marginBottom: 8,
-  },
+  pillsWrapper: { marginBottom: 8 },
   pills: {
     paddingHorizontal: 16,
     gap: 8,
@@ -860,16 +950,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 6,
     borderRadius: 20,
-    backgroundColor: SURFACE,
     borderWidth: 1,
-    borderColor: BORDER,
   },
-  pillActive: {
-    backgroundColor: `${GOLD}20`,
-    borderColor: GOLD,
-  },
-  pillText: { fontSize: 12, fontWeight: '500', color: MUTED },
-  pillTextActive: { color: GOLD, fontWeight: '700' },
+  pillText: { fontSize: 12, fontWeight: '500' },
 
   statusBar: {
     flexDirection: 'row',
@@ -878,22 +961,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     marginBottom: 8,
   },
-  resultsCount: {
-    fontSize: 12,
-    color: MUTED,
-    fontWeight: '500',
-  },
+  resultsCount: { fontSize: 12, fontWeight: '500' },
   clearAllBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
     paddingVertical: 2,
   },
-  clearAllText: {
-    fontSize: 12,
-    color: GOLD,
-    fontWeight: '600',
-  },
+  clearAllText: { fontSize: 12, fontWeight: '600' },
 
   centered: {
     flex: 1,
@@ -902,11 +977,10 @@ const styles = StyleSheet.create({
     padding: 24,
     paddingBottom: 110,
   },
-  stateText: { color: MUTED, marginTop: 10, textAlign: 'center', fontSize: 13 },
+  stateText: { marginTop: 10, textAlign: 'center', fontSize: 13 },
   emptyTitle: {
     fontSize: 17,
     fontWeight: '700',
-    color: TEXT,
     marginTop: 14,
     marginBottom: 4,
   },
@@ -915,22 +989,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 10,
     borderRadius: 10,
-    backgroundColor: SURFACE_LIGHT,
     borderWidth: 1,
-    borderColor: BORDER,
   },
-  clearFilterBtnText: {
-    color: GOLD,
-    fontWeight: '600',
-    fontSize: 13,
-  },
+  clearFilterBtnText: { fontWeight: '600', fontSize: 13 },
   retryBtn: {
     paddingHorizontal: 24,
     paddingVertical: 11,
-    backgroundColor: GOLD,
     borderRadius: 10,
   },
-  retryBtnText: { color: BG, fontWeight: '700', fontSize: 14 },
+  retryBtnText: { fontWeight: '700', fontSize: 14 },
 
   listContent: {
     paddingHorizontal: 12,
@@ -948,17 +1015,14 @@ const styles = StyleSheet.create({
   // Filter Modal
   modalBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.75)',
     justifyContent: 'flex-end',
   },
   modalContent: {
-    backgroundColor: SURFACE,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     padding: 20,
     maxHeight: '82%',
     borderWidth: 1,
-    borderColor: BORDER,
   },
   modalHeader: {
     flexDirection: 'row',
@@ -966,47 +1030,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 12,
   },
-  modalTitle: { fontSize: 18, fontWeight: '700', color: TEXT },
-  modalScroll: {
-    marginVertical: 4,
-  },
+  modalTitle: { fontSize: 18, fontWeight: '700' },
+  modalScroll: { marginVertical: 4 },
   filterSectionTitle: {
     fontSize: 11,
     fontWeight: '700',
-    color: MUTED,
     marginTop: 14,
     marginBottom: 8,
     textTransform: 'uppercase',
     letterSpacing: 0.6,
   },
-  chipRow: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  chipWrapRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 7,
-  },
-  chip: {
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 10,
-    backgroundColor: SURFACE_LIGHT,
-    borderWidth: 1,
-    borderColor: BORDER,
-  },
-  chipActive: {
-    borderColor: GOLD,
-    backgroundColor: `${GOLD}22`,
-  },
-  chipText: { fontSize: 12, color: MUTED, fontWeight: '500' },
-  chipTextActive: { color: GOLD, fontWeight: '700' },
+  chipRow: { flexDirection: 'row', gap: 8 },
+  chipWrapRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 7 },
   modalActions: {
     flexDirection: 'row',
     gap: 12,
     marginTop: 18,
-    paddingBottom: Platform.OS === 'ios' ? 16 : 0,
   },
   resetBtn: {
     flex: 1,
@@ -1015,17 +1054,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: BORDER,
-    backgroundColor: SURFACE_LIGHT,
   },
-  resetBtnText: { color: TEXT, fontWeight: '600', fontSize: 14 },
+  resetBtnText: { fontWeight: '600', fontSize: 14 },
   applyBtn: {
     flex: 2,
     height: 44,
     borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: GOLD,
   },
-  applyBtnText: { color: BG, fontWeight: '700', fontSize: 14 },
+  applyBtnText: { fontWeight: '700', fontSize: 14 },
 });

@@ -11,8 +11,9 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { BookDetailModal, Book, BookStatus } from '../components/BookDetailModal';
-import { BookCard, GOLD, BG, SURFACE, BORDER, TEXT, MUTED } from '../components/BookCard';
+import { BookCard } from '../components/BookCard';
 import { fetchUserLibrary, updateShelfStatus } from '../services/api';
+import { useTheme, GOLD } from '../theme';
 
 type TabType = 'TO_READ' | 'FINISHED' | 'FAVORITE';
 
@@ -51,6 +52,8 @@ const TABS = [
 
 export default function LibraryScreen() {
   const router = useRouter();
+  const { theme } = useTheme();
+
   const [activeTab, setActiveTab] = useState<TabType>('TO_READ');
   const [books, setBooks] = useState<Book[]>([]);
   const [loading, setLoading] = useState(true);
@@ -86,7 +89,6 @@ export default function LibraryScreen() {
     newStatus: BookStatus,
     savedBook?: Book
   ) => {
-    // Optimistic update
     setBooks((prev) => {
       if (!newStatus) return prev.filter((b) => b.google_book_id !== bookId);
       return prev.map((b) =>
@@ -100,16 +102,16 @@ export default function LibraryScreen() {
       );
     }
 
-    // Sync status change to backend
     try {
       await updateShelfStatus(bookId, newStatus);
     } catch {
-      loadLibrary(false); // Roll back on failure
+      loadLibrary(false);
     }
   };
 
   const filtered = books.filter((b) => b.status === activeTab);
-  const countFor = (tab: TabType) => books.filter((b) => b.status === tab).length;
+  const countFor = (tab: TabType) =>
+    books.filter((b) => b.status === tab).length;
   const activeConfig = TABS.find((t) => t.key === activeTab)!;
 
   const handleCardPress = useCallback((book: Book) => {
@@ -125,9 +127,14 @@ export default function LibraryScreen() {
   );
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: theme.bg }]}>
       {/* Tab Switcher */}
-      <View style={styles.tabBar}>
+      <View
+        style={[
+          styles.tabBar,
+          { backgroundColor: theme.surface, borderColor: theme.border },
+        ]}
+      >
         {TABS.map((tab) => {
           const active = activeTab === tab.key;
           const count = countFor(tab.key);
@@ -136,10 +143,12 @@ export default function LibraryScreen() {
               key={tab.key}
               style={[
                 styles.tab,
-                active && {
-                  backgroundColor: tab.activeBg,
-                  borderColor: tab.activeBorder,
-                },
+                active
+                  ? {
+                      backgroundColor: tab.activeBg,
+                      borderColor: tab.activeBorder,
+                    }
+                  : { borderColor: 'transparent' },
               ]}
               onPress={() => setActiveTab(tab.key)}
               activeOpacity={0.8}
@@ -147,22 +156,35 @@ export default function LibraryScreen() {
               <Ionicons
                 name={active ? tab.icon : (`${tab.icon}-outline` as any)}
                 size={14}
-                color={active ? tab.color : MUTED}
+                color={active ? tab.color : theme.muted}
               />
-              <Text style={[styles.tabLabel, active && { color: tab.color, fontWeight: '700' }]}>
+              <Text
+                style={[
+                  styles.tabLabel,
+                  { color: active ? tab.color : theme.muted },
+                  active && { fontWeight: '700' },
+                ]}
+              >
                 {tab.label}
               </Text>
               {count > 0 && (
                 <View
                   style={[
                     styles.tabBadge,
-                    active && { backgroundColor: `${tab.color}25` },
+                    {
+                      backgroundColor: active
+                        ? `${tab.color}25`
+                        : theme.pillBg,
+                    },
                   ]}
                 >
                   <Text
                     style={[
                       styles.tabBadgeText,
-                      active && { color: tab.color, fontWeight: '700' },
+                      {
+                        color: active ? tab.color : theme.muted,
+                        fontWeight: active ? '700' : '600',
+                      },
                     ]}
                   >
                     {count}
@@ -174,38 +196,58 @@ export default function LibraryScreen() {
         })}
       </View>
 
-      {/* Content states */}
+      {/* Content */}
       {loading ? (
         <View style={styles.centered}>
           <ActivityIndicator size="large" color={GOLD} />
-          <Text style={styles.stateText}>Accessing your personal library…</Text>
+          <Text style={[styles.stateText, { color: theme.muted }]}>
+            Accessing your personal library…
+          </Text>
         </View>
       ) : error ? (
         <View style={styles.centered}>
           <Ionicons name="alert-circle-outline" size={44} color="#ef4444" />
-          <Text style={[styles.stateText, { color: TEXT, marginBottom: 16 }]}>{error}</Text>
-          <TouchableOpacity style={styles.retryBtn} onPress={() => loadLibrary(false)}>
-            <Text style={styles.retryBtnText}>Retry</Text>
+          <Text style={[styles.stateText, { color: theme.text, marginBottom: 16 }]}>
+            {error}
+          </Text>
+          <TouchableOpacity
+            style={[styles.retryBtn, { backgroundColor: GOLD }]}
+            onPress={() => loadLibrary(false)}
+          >
+            <Text style={[styles.retryBtnText, { color: theme.bg }]}>
+              Retry
+            </Text>
           </TouchableOpacity>
         </View>
       ) : filtered.length === 0 ? (
         <View style={styles.centered}>
-          <View style={[styles.emptyIconBg, { backgroundColor: `${activeConfig.color}15` }]}>
+          <View
+            style={[
+              styles.emptyIconBg,
+              { backgroundColor: `${activeConfig.color}15` },
+            ]}
+          >
             <Ionicons
               name={`${activeConfig.icon}-outline` as any}
               size={48}
               color={activeConfig.color}
             />
           </View>
-          <Text style={styles.emptyTitle}>{activeConfig.emptyTitle}</Text>
-          <Text style={styles.stateText}>{activeConfig.emptyMsg}</Text>
+          <Text style={[styles.emptyTitle, { color: theme.text }]}>
+            {activeConfig.emptyTitle}
+          </Text>
+          <Text style={[styles.stateText, { color: theme.muted }]}>
+            {activeConfig.emptyMsg}
+          </Text>
           <TouchableOpacity
-            style={styles.exploreBtn}
+            style={[styles.exploreBtn, { backgroundColor: GOLD }]}
             onPress={() => router.push('/explore')}
             activeOpacity={0.8}
           >
-            <Ionicons name="compass-outline" size={16} color={BG} />
-            <Text style={styles.exploreBtnText}>Discover Books</Text>
+            <Ionicons name="compass-outline" size={16} color={theme.bg} />
+            <Text style={[styles.exploreBtnText, { color: theme.bg }]}>
+              Discover Books
+            </Text>
           </TouchableOpacity>
         </View>
       ) : (
@@ -239,16 +281,14 @@ export default function LibraryScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: BG, paddingTop: 14 },
+  container: { flex: 1, paddingTop: 14 },
 
   tabBar: {
     flexDirection: 'row',
     marginHorizontal: 16,
     marginBottom: 16,
-    backgroundColor: SURFACE,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: BORDER,
     padding: 4,
     gap: 4,
   },
@@ -261,24 +301,19 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     gap: 4,
     borderWidth: 1,
-    borderColor: 'transparent',
   },
   tabLabel: {
     fontSize: 11,
     fontWeight: '600',
-    color: MUTED,
     letterSpacing: 0.1,
   },
   tabBadge: {
     paddingHorizontal: 5,
     paddingVertical: 1,
     borderRadius: 6,
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
   },
   tabBadgeText: {
     fontSize: 10,
-    fontWeight: '700',
-    color: MUTED,
   },
 
   centered: {
@@ -288,7 +323,12 @@ const styles = StyleSheet.create({
     padding: 24,
     paddingBottom: 110,
   },
-  stateText: { color: MUTED, marginTop: 8, textAlign: 'center', fontSize: 13, maxWidth: 280 },
+  stateText: {
+    marginTop: 8,
+    textAlign: 'center',
+    fontSize: 13,
+    maxWidth: 280,
+  },
   emptyIconBg: {
     width: 80,
     height: 80,
@@ -300,7 +340,6 @@ const styles = StyleSheet.create({
   emptyTitle: {
     fontSize: 17,
     fontWeight: '700',
-    color: TEXT,
     marginTop: 6,
     marginBottom: 4,
     textAlign: 'center',
@@ -312,17 +351,15 @@ const styles = StyleSheet.create({
     marginTop: 20,
     paddingHorizontal: 22,
     paddingVertical: 11,
-    backgroundColor: GOLD,
     borderRadius: 12,
   },
-  exploreBtnText: { color: BG, fontWeight: '700', fontSize: 14 },
+  exploreBtnText: { fontWeight: '700', fontSize: 14 },
   retryBtn: {
     paddingHorizontal: 28,
     paddingVertical: 11,
-    backgroundColor: GOLD,
     borderRadius: 10,
   },
-  retryBtnText: { color: BG, fontWeight: '700', fontSize: 14 },
+  retryBtnText: { fontWeight: '700', fontSize: 14 },
 
   listContent: {
     paddingHorizontal: 12,
