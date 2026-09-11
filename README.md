@@ -9,24 +9,28 @@ Discover trending titles, search across millions of books from multiple global s
 ## 🌟 Key Features
 
 ### 🔍 Fast & Resilient Book Discovery
+
 * **Multi-Source Aggregation**: Concurrently fetches books from Google Books, OpenLibrary, Gutendex (Project Gutenberg), and OpenBD.
 * **Randomized Home Feed on Refresh**: Pull-to-refresh dynamically shuffles genres, seed topics, and query offsets for endless discovery without duplicate books.
 * **350ms Debounced Search**: Fast search with automatic race condition cancellation (`AbortController`) to eliminate keystroke spam.
 * **Infinite Scroll Pagination**: Smooth batch loading (`onEndReached`) as you scroll.
 
 ### 🎯 Comprehensive Multi-Filtering
+
 * **Expanded Genres & Subjects**: Search and filter by **Politics**, **Geopolitics**, **Geography**, **Philosophy**, **Science**, **History**, **Technology**, **Fiction**, **Psychology**, **Business**, and more.
 * **Book & Novel Formats**: Refine by *Novel, Series, Short Stories, Graphic Novel, Non-Fiction, Essay / Treatise, Biography / Memoir*.
 * **Writing Style & Tone**: Filter by *Literary, Analytical, Dark, Lighthearted, Academic, Poetic, Thriller, Philosophical*.
 * **Sort Orders**: Sort by *Relevance* or *Newest*.
 
 ### 📱 Responsive 4-Column Mobile Grid & UI/UX
+
 * **4 Books Per Row on Mobile**: High-density, balanced grid layout optimized for mobile screens.
 * **Proportional 2:3 Book Covers**: Powered by [`expo-image`](https://docs.expo.dev/versions/latest/sdk/image/) with disk-memory caching and fade transitions to eliminate layout shifts (CLS).
 * **Interactive Shelf Status Modal**: View detailed book descriptions, category tags, author details, and update your shelf status (*To Read*, *Finished*, *Favorites*) in real-time.
 * **Floating Glassmorphic Tab Bar**: Modern floating navigation bar with clearance padding so no cards are obscured.
 
 ### ⚡ Backend Performance & Caching
+
 * **Multithreaded API Fetching**: Concurrently queries external providers via Python's `ThreadPoolExecutor` (~400ms vs 20s+).
 * **In-Memory TTL Caching**: Frequently requested feeds and queries are cached in memory for sub-millisecond responses.
 * **Cross-Shelf Deduplication**: Automatically deduplicates titles across all sections.
@@ -36,7 +40,7 @@ Discover trending titles, search across millions of books from multiple global s
 ## 🛠️ Tech Stack
 
 | Layer | Technology |
-|---|---|
+| --- | --- |
 | **Mobile Frontend** | [React Native](https://reactnative.dev/) (0.86) + [Expo](https://expo.dev/) (SDK 57) |
 | **Routing** | [Expo Router](https://docs.expo.dev/router/introduction/) |
 | **Image Pipeline** | `expo-image` (memory-disk caching & blurhash placeholders) |
@@ -50,6 +54,7 @@ Discover trending titles, search across millions of books from multiple global s
 ## 🚀 Getting Started
 
 ### 1. Prerequisites
+
 * [Node.js](https://nodejs.org/) (v18+)
 * [Python](https://www.python.org/) (v3.10+)
 * [Expo Go](https://expo.dev/go) app on iOS or Android (for mobile testing)
@@ -95,7 +100,8 @@ npm install
 npx expo start
 ```
 
-#### Viewing the App:
+#### Viewing the App
+
 * **Web Browser**: Press **`w`** in the Expo terminal.
 * **Physical Mobile Device**: Scan the QR code using the **Expo Go** app (Android) or **Camera** (iOS).
 * **Android Emulator**: Press **`a`**.
@@ -143,6 +149,7 @@ book-rating/
 ## 🔒 Environment & Security
 
 Sensitive credentials, environment files, local SQLite databases, build artifacts, and secrets are strictly ignored via `.gitignore`:
+
 * `.env*`
 * `*.jks`, `*.keystore`, `*.pem`, `*.key`
 * `db.sqlite3`
@@ -154,4 +161,5 @@ To configure a Google Books API key, add `GOOGLE_BOOKS_API_KEY=your_key_here` to
 ---
 
 ## 📄 License
+
 This project is licensed under the MIT License.

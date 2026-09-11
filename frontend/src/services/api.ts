@@ -5,7 +5,7 @@ export const REMOTE_URL = 'https://bookrating-orpin.vercel.app/api';
 
 export const BASE_URL =
   process.env.EXPO_PUBLIC_API_URL ||
-  (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+  (typeof window !== 'undefined' && window.location && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
     ? LOCAL_URL
     : REMOTE_URL);
 
