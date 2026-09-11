@@ -58,9 +58,10 @@ const NOVEL_TYPES = [
   'Biography / Memoir',
 ];
 
-type SortOption = 'relevance' | 'newest';
+export type SearchScope = 'all' | 'title' | 'author';
+export type SortOption = 'relevance' | 'newest' | 'title';
 
-interface FilterOptions {
+export interface FilterOptions {
   sortBy: SortOption;
   genre: string;
   writingStyle: string;
@@ -74,11 +75,56 @@ const DEFAULT_FILTERS: FilterOptions = {
   novelType: 'All',
 };
 
+// ─── Taxonomy Keyword Mappings for Accurate Filtering ───────────────
+
+const CATEGORY_KEYWORDS: Record<string, string[]> = {
+  All: [],
+  Politics: ['politic', 'government', 'statecraft', 'diplomacy', 'democracy', 'geopolitics', 'policy', 'civics', 'international relations', 'political science', 'law'],
+  Geopolitics: ['geopolitic', 'international relations', 'foreign policy', 'world politics', 'global affairs', 'diplomacy', 'strategy', 'statecraft', 'cold war'],
+  Geography: ['geograph', 'earth', 'atlas', 'maps', 'exploration', 'cartography', 'travel', 'spatial'],
+  Fiction: ['fiction', 'novel', 'literature', 'story', 'stories', 'prose', 'tales'],
+  Technology: ['technol', 'computer', 'software', 'programming', 'ai', 'artificial intelligence', 'code', 'data', 'algorithm', 'cyber', 'digital', 'tech', 'internet'],
+  Philosophy: ['philosoph', 'ethics', 'logic', 'stoic', 'epistemology', 'metaphysics', 'existential', 'morality', 'thought', 'meditation'],
+  Science: ['science', 'physics', 'biology', 'chemistry', 'astronomy', 'cosmos', 'evolution', 'quantum', 'nature', 'scientific', 'space'],
+  History: ['history', 'historical', 'war', 'ancient', 'civilization', 'empire', 'revolution', 'medieval', 'century', 'chronicle'],
+  Psychology: ['psycholog', 'behavior', 'mind', 'cognitive', 'mental', 'brain', 'psychoanalysis', 'therapy', 'neuro', 'emotion'],
+  Business: ['business', 'econom', 'finance', 'invest', 'management', 'market', 'money', 'leadership', 'startup', 'entrepreneur', 'wealth'],
+  Biography: ['biograph', 'autobiograph', 'memoir', 'diary', 'life of', 'profile'],
+  Mystery: ['mystery', 'thriller', 'detective', 'crime', 'suspense', 'investigation', 'murder', 'noir'],
+  Fantasy: ['fantasy', 'magic', 'wizard', 'dragon', 'myth', 'legend', 'epic fantasy', 'supernatural', 'lore'],
+  'Self Help': ['self-help', 'self help', 'personal development', 'motivation', 'habits', 'productivity', 'success', 'mindset', 'inspiration'],
+};
+
+const NOVEL_TYPE_KEYWORDS: Record<string, string[]> = {
+  All: [],
+  Novel: ['novel', 'fiction', 'literature', 'story'],
+  Series: ['series', 'volume', 'trilogy', 'chronicles', 'book 1', 'book 2', 'book 3', 'part 1', 'saga'],
+  'Short Stories': ['short stor', 'stories', 'collection', 'anthology', 'tales'],
+  'Graphic Novel': ['graphic novel', 'comic', 'manga', 'illustrated'],
+  'Non-Fiction': ['non-fiction', 'nonfiction', 'biography', 'history', 'science', 'business', 'philosophy', 'politics', 'self-help'],
+  'Essay / Treatise': ['essay', 'treatise', 'papers', 'commentary', 'dialogues', 'lectures'],
+  'Biography / Memoir': ['biograph', 'memoir', 'autobiograph', 'life of'],
+};
+
+const WRITING_STYLE_KEYWORDS: Record<string, string[]> = {
+  All: [],
+  Literary: ['literary', 'classic', 'masterpiece', 'prize', 'fiction', 'prose'],
+  Analytical: ['analysis', 'analytical', 'research', 'critical', 'study', 'science', 'theory', 'data'],
+  Dark: ['dark', 'gothic', 'horror', 'grim', 'noir', 'tragic', 'dystopian'],
+  Lighthearted: ['humor', 'comedy', 'funny', 'witty', 'warm', 'lighthearted', 'fun', 'charming'],
+  Academic: ['academic', 'university', 'textbook', 'journal', 'scholarly', 'treatise', 'study'],
+  Poetic: ['poet', 'verse', 'lyric', 'rhyme', 'stanza'],
+  Thriller: ['thriller', 'suspense', 'mystery', 'detective', 'action', 'crime', 'tension'],
+  Philosophical: ['philosoph', 'stoic', 'ethics', 'wisdom', 'existential', 'meditation'],
+};
+
 export default function ExploreScreen() {
-  const [query, setQuery] = useState('');
+  // Input vs Active Search Query
+  const [inputText, setInputText] = useState('');
+  const [activeQuery, setActiveQuery] = useState('');
+  const [searchScope, setSearchScope] = useState<SearchScope>('all');
   const [focused, setFocused] = useState(false);
-  const [category, setCategory] = useState('All');
-  
+
   // Results & Pagination
   const [books, setBooks] = useState<Book[]>([]);
   const [page, setPage] = useState(1);
@@ -92,15 +138,15 @@ export default function ExploreScreen() {
   const [modalVisible, setModalVisible] = useState(false);
   const [filterModalVisible, setFilterModalVisible] = useState(false);
 
-  // Filter State
+  // Filters State
   const [activeFilters, setActiveFilters] = useState<FilterOptions>(DEFAULT_FILTERS);
   const [tempFilters, setTempFilters] = useState<FilterOptions>(DEFAULT_FILTERS);
 
-  // Ref for active AbortController to cancel previous in-flight requests
+  // Refs for debouncing & network cancellation
   const abortControllerRef = useRef<AbortController | null>(null);
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Check if non-default filters are active
+  // Check if non-default filters or non-empty query are active
   const isFilterActive = useMemo(() => {
     return (
       activeFilters.sortBy !== DEFAULT_FILTERS.sortBy ||
@@ -110,15 +156,16 @@ export default function ExploreScreen() {
     );
   }, [activeFilters]);
 
-  // Centralized search executor with AbortController cancellation & pagination
+  // Centralized fetch function
   const performFetch = useCallback(
     async (
       q: string,
-      gen: string,
+      scope: SearchScope,
+      genre: string,
       pageNum: number,
       isLoadMore = false
     ) => {
-      // Cancel previous ongoing request to prevent race conditions
+      // Abort previous in-flight request
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
       }
@@ -133,17 +180,18 @@ export default function ExploreScreen() {
           setError(null);
         }
 
+        const trimmedQ = q.trim();
         const data = await searchBooks({
-          q: q.trim(),
-          genre: gen !== 'All' ? gen : undefined,
+          q: trimmedQ || undefined,
+          scope: trimmedQ ? scope : undefined,
+          genre: genre !== 'All' ? genre : undefined,
           page: pageNum,
-          limit: 24, // Optimized for 4-column batches
+          limit: 24,
           signal: controller.signal,
         });
 
         setBooks((prev) => {
           if (pageNum === 1) return data.results;
-          // Deduplicate incoming results
           const seen = new Set(prev.map((b) => b.google_book_id));
           const uniqueNew = data.results.filter((b) => !seen.has(b.google_book_id));
           return [...prev, ...uniqueNew];
@@ -164,78 +212,165 @@ export default function ExploreScreen() {
     []
   );
 
-  // Debounced search trigger when query or category changes
-  useEffect(() => {
+  // Trigger search execution immediately (canceling any pending debounce)
+  const executeSearch = useCallback(
+    (textToSearch: string, scope = searchScope, genre = activeFilters.genre) => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
+      setActiveQuery(textToSearch);
+      performFetch(textToSearch, scope, genre, 1, false);
+    },
+    [searchScope, activeFilters.genre, performFetch]
+  );
+
+  // Debounced search when user types in search box (600ms debounce)
+  const handleInputChange = (text: string) => {
+    setInputText(text);
+
     if (debounceTimerRef.current) {
       clearTimeout(debounceTimerRef.current);
     }
 
+    // Wait until user finishes typing before executing search
     debounceTimerRef.current = setTimeout(() => {
-      performFetch(query, category, 1, false);
-    }, 350);
+      executeSearch(text, searchScope, activeFilters.genre);
+    }, 600);
+  };
 
+  // Immediate execution on keyboard Enter / Search
+  const handleSubmitSearch = () => {
+    executeSearch(inputText, searchScope, activeFilters.genre);
+  };
+
+  // Clear search input and instantly reset search results
+  const handleClearSearch = () => {
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+    setInputText('');
+    setActiveQuery('');
+    performFetch('', searchScope, activeFilters.genre, 1, false);
+  };
+
+  // Change Search Scope ('all' | 'title' | 'author')
+  const handleScopeChange = (newScope: SearchScope) => {
+    setSearchScope(newScope);
+    executeSearch(inputText, newScope, activeFilters.genre);
+  };
+
+  // Category Pill Selection
+  const handleSelectCategory = (cat: string) => {
+    setActiveFilters((prev) => ({ ...prev, genre: cat }));
+    executeSearch(inputText, searchScope, cat);
+  };
+
+  // Initial load
+  useEffect(() => {
+    performFetch(activeQuery, searchScope, activeFilters.genre, 1, false);
     return () => {
       if (debounceTimerRef.current) {
         clearTimeout(debounceTimerRef.current);
       }
     };
-  }, [query, category, performFetch]);
-
-  // Handle Category Pill Selection
-  const handleSelectCategory = (cat: string) => {
-    setCategory(cat);
-    setActiveFilters((prev) => ({ ...prev, genre: cat }));
-  };
+  }, []);
 
   // Load more on scroll reached end
   const handleLoadMore = () => {
     if (!loading && !loadingMore && hasMore) {
-      performFetch(query, category, page + 1, true);
+      performFetch(activeQuery, searchScope, activeFilters.genre, page + 1, true);
     }
   };
 
-  // Multi-Filter Matching (Genre, Style, Novel Type, Sort)
+  // Filter and Sort Books
   const filteredAndSortedBooks = useMemo(() => {
     let list = [...books];
 
-    const getSearchableText = (book: Book): string => {
-      const desc = book.description || '';
-      const title = book.title || '';
-      const cats = book.categories || '';
-      const authors = book.authors || '';
-      return `${title} ${desc} ${cats} ${authors}`.toLowerCase();
+    // Helper: case-insensitive partial match for search query
+    const matchTokens = (target: string, query: string): boolean => {
+      const tokens = query.toLowerCase().trim().split(/\s+/).filter(Boolean);
+      if (tokens.length === 0) return true;
+      const lowerTarget = target.toLowerCase();
+      return tokens.every((tok) => lowerTarget.includes(tok));
     };
 
-    // 1. Genre filter (if selected via modal or pill)
+    // 1. Apply Active Query & Scope matching
+    if (activeQuery.trim()) {
+      const q = activeQuery.trim();
+      list = list.filter((b) => {
+        const title = b.title || '';
+        const authors = b.authors || '';
+        const desc = b.description || '';
+        const cats = b.categories || '';
+
+        if (searchScope === 'title') {
+          return matchTokens(title, q);
+        }
+        if (searchScope === 'author') {
+          return matchTokens(authors, q);
+        }
+        // Scope === 'all': match in title OR author OR categories OR description
+        return (
+          matchTokens(title, q) ||
+          matchTokens(authors, q) ||
+          matchTokens(cats, q) ||
+          matchTokens(desc, q)
+        );
+      });
+    }
+
+    // 2. Genre / Category Filter (using rich taxonomy keyword matching)
     if (activeFilters.genre !== 'All') {
-      const genreTerm = activeFilters.genre.toLowerCase();
-      list = list.filter((b) => getSearchableText(b).includes(genreTerm));
+      const keywords = CATEGORY_KEYWORDS[activeFilters.genre] || [activeFilters.genre.toLowerCase()];
+      list = list.filter((b) => {
+        const searchable = `${b.categories || ''} ${b.title || ''} ${b.description || ''}`.toLowerCase();
+        return keywords.some((kw) => searchable.includes(kw));
+      });
     }
 
-    // 2. Filter by Writing Style
-    if (activeFilters.writingStyle !== 'All') {
-      const styleTerm = activeFilters.writingStyle.toLowerCase();
-      list = list.filter((b) => getSearchableText(b).includes(styleTerm));
-    }
-
-    // 3. Filter by Novel / Book Format
+    // 3. Novel / Book Format Filter
     if (activeFilters.novelType !== 'All') {
-      const typeTerm = activeFilters.novelType.toLowerCase().split('/')[0].trim();
-      list = list.filter((b) => getSearchableText(b).includes(typeTerm));
+      const keywords = NOVEL_TYPE_KEYWORDS[activeFilters.novelType] || [activeFilters.novelType.toLowerCase()];
+      list = list.filter((b) => {
+        const searchable = `${b.title || ''} ${b.description || ''} ${b.categories || ''}`.toLowerCase();
+        return keywords.some((kw) => searchable.includes(kw));
+      });
     }
 
-    // 4. Sort Results
+    // 4. Writing Style & Tone Filter
+    if (activeFilters.writingStyle !== 'All') {
+      const keywords = WRITING_STYLE_KEYWORDS[activeFilters.writingStyle] || [activeFilters.writingStyle.toLowerCase()];
+      list = list.filter((b) => {
+        const searchable = `${b.title || ''} ${b.description || ''} ${b.categories || ''}`.toLowerCase();
+        return keywords.some((kw) => searchable.includes(kw));
+      });
+    }
+
+    // 5. Sort Results
     if (activeFilters.sortBy === 'newest') {
       list.sort((a, b) => {
-        const dateA = new Date(a.publishedDate || 0).getTime();
-        const dateB = new Date(b.publishedDate || 0).getTime();
-        return dateB - dateA;
+        const yearA = parseInt(a.publishedDate || '0', 10) || 0;
+        const yearB = parseInt(b.publishedDate || '0', 10) || 0;
+        return yearB - yearA;
+      });
+    } else if (activeFilters.sortBy === 'title') {
+      list.sort((a, b) => (a.title || '').localeCompare(b.title || ''));
+    } else if (activeFilters.sortBy === 'relevance' && activeQuery.trim()) {
+      // Prioritize title/author matches when sorting by relevance
+      const qLower = activeQuery.trim().toLowerCase();
+      list.sort((a, b) => {
+        const aTitleMatch = (a.title || '').toLowerCase().includes(qLower);
+        const bTitleMatch = (b.title || '').toLowerCase().includes(qLower);
+        if (aTitleMatch && !bTitleMatch) return -1;
+        if (!aTitleMatch && bTitleMatch) return 1;
+        return 0;
       });
     }
 
     return list;
-  }, [books, activeFilters]);
+  }, [books, activeQuery, searchScope, activeFilters]);
 
+  // Book Status and Shelf Management
   const handleStatusChange = async (
     bookId: string,
     newStatus: BookStatus,
@@ -255,24 +390,27 @@ export default function ExploreScreen() {
     }
   };
 
+  // Filter Modal Controls
   const openFilterModal = () => {
-    setTempFilters({ ...activeFilters, genre: category });
+    setTempFilters({ ...activeFilters });
     setFilterModalVisible(true);
   };
 
   const applyFilters = () => {
+    const genreChanged = tempFilters.genre !== activeFilters.genre;
     setActiveFilters(tempFilters);
-    if (tempFilters.genre !== category) {
-      setCategory(tempFilters.genre);
-    }
     setFilterModalVisible(false);
+    if (genreChanged) {
+      executeSearch(inputText, searchScope, tempFilters.genre);
+    }
   };
 
   const resetFilters = () => {
-    setTempFilters(DEFAULT_FILTERS);
-    setActiveFilters(DEFAULT_FILTERS);
-    setCategory('All');
+    const defaultFilters = DEFAULT_FILTERS;
+    setTempFilters(defaultFilters);
+    setActiveFilters(defaultFilters);
     setFilterModalVisible(false);
+    executeSearch(inputText, searchScope, 'All');
   };
 
   const handleCardPress = useCallback((book: Book) => {
@@ -300,23 +438,46 @@ export default function ExploreScreen() {
           />
           <TextInput
             style={styles.searchInput}
-            placeholder="Search title, author, politics, etc…"
+            placeholder={
+              searchScope === 'author'
+                ? 'Search by author (e.g. Orwell, Rowling)…'
+                : searchScope === 'title'
+                ? 'Search by title (e.g. Dune, 1984)…'
+                : 'Search title, author, or keywords…'
+            }
             placeholderTextColor={MUTED}
-            value={query}
-            onChangeText={setQuery}
+            value={inputText}
+            onChangeText={handleInputChange}
+            onSubmitEditing={handleSubmitSearch}
             onFocus={() => setFocused(true)}
             onBlur={() => setFocused(false)}
             returnKeyType="search"
+            autoCorrect={false}
+            autoCapitalize="none"
           />
-          {query.length > 0 && (
+          {inputText.length > 0 && (
             <TouchableOpacity
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              onPress={() => setQuery('')}
+              onPress={handleClearSearch}
+              style={{ marginRight: 4 }}
             >
               <Ionicons name="close-circle" size={18} color={MUTED} />
             </TouchableOpacity>
           )}
         </View>
+
+        {/* Dedicated Search Action Button */}
+        <TouchableOpacity
+          style={styles.searchBtn}
+          activeOpacity={0.8}
+          onPress={handleSubmitSearch}
+        >
+          {loading ? (
+            <ActivityIndicator size="small" color={BG} />
+          ) : (
+            <Ionicons name="arrow-forward" size={18} color={BG} />
+          )}
+        </TouchableOpacity>
 
         {/* Filter Trigger Button */}
         <TouchableOpacity
@@ -333,6 +494,28 @@ export default function ExploreScreen() {
         </TouchableOpacity>
       </View>
 
+      {/* Scope Selector: [ All | Title | Author ] */}
+      <View style={styles.scopeRow}>
+        <Text style={styles.scopeLabel}>Search In:</Text>
+        <View style={styles.scopeSegment}>
+          {(['all', 'title', 'author'] as SearchScope[]).map((scope) => {
+            const active = searchScope === scope;
+            return (
+              <TouchableOpacity
+                key={scope}
+                style={[styles.scopeBtn, active && styles.scopeBtnActive]}
+                onPress={() => handleScopeChange(scope)}
+                activeOpacity={0.75}
+              >
+                <Text style={[styles.scopeBtnText, active && styles.scopeBtnTextActive]}>
+                  {scope === 'all' ? 'All' : scope === 'title' ? 'Book Title' : 'Author'}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      </View>
+
       {/* Category Pills Row */}
       <View style={styles.pillsWrapper}>
         <ScrollView
@@ -342,7 +525,7 @@ export default function ExploreScreen() {
           nestedScrollEnabled={true}
         >
           {CATEGORIES.map((cat) => {
-            const active = category === cat;
+            const active = activeFilters.genre === cat;
             return (
               <TouchableOpacity
                 key={cat}
@@ -359,8 +542,28 @@ export default function ExploreScreen() {
         </ScrollView>
       </View>
 
+      {/* Results Header Status & Active Filters Tag */}
+      {(isFilterActive || activeQuery.trim().length > 0) && (
+        <View style={styles.statusBar}>
+          <Text style={styles.resultsCount}>
+            {filteredAndSortedBooks.length} {filteredAndSortedBooks.length === 1 ? 'book' : 'books'} found
+            {activeQuery.trim() ? ` for "${activeQuery}"` : ''}
+          </Text>
+          <TouchableOpacity
+            style={styles.clearAllBtn}
+            onPress={() => {
+              handleClearSearch();
+              resetFilters();
+            }}
+          >
+            <Text style={styles.clearAllText}>Clear all</Text>
+            <Ionicons name="close-circle-outline" size={14} color={GOLD} />
+          </TouchableOpacity>
+        </View>
+      )}
+
       {/* Main Results Container */}
-      {loading ? (
+      {loading && books.length === 0 ? (
         <View style={styles.centered}>
           <ActivityIndicator size="large" color={GOLD} />
           <Text style={styles.stateText}>Finding great books…</Text>
@@ -371,7 +574,7 @@ export default function ExploreScreen() {
           <Text style={[styles.stateText, { color: TEXT, marginBottom: 16 }]}>{error}</Text>
           <TouchableOpacity
             style={styles.retryBtn}
-            onPress={() => performFetch(query, category, 1, false)}
+            onPress={() => performFetch(activeQuery, searchScope, activeFilters.genre, 1, false)}
           >
             <Text style={styles.retryBtnText}>Retry</Text>
           </TouchableOpacity>
@@ -381,11 +584,19 @@ export default function ExploreScreen() {
           <Ionicons name="search-outline" size={54} color="#272730" />
           <Text style={styles.emptyTitle}>No matching books found</Text>
           <Text style={styles.stateText}>
-            Try clearing active filters or searching for different keywords.
+            {activeQuery.trim()
+              ? `No books matched "${activeQuery}" in ${searchScope === 'all' ? 'any field' : searchScope}.`
+              : 'Try selecting a different category or clearing active filters.'}
           </Text>
-          {isFilterActive && (
-            <TouchableOpacity style={styles.clearFilterBtn} onPress={resetFilters}>
-              <Text style={styles.clearFilterBtnText}>Clear Filters</Text>
+          {(isFilterActive || activeQuery.trim().length > 0) && (
+            <TouchableOpacity
+              style={styles.clearFilterBtn}
+              onPress={() => {
+                handleClearSearch();
+                resetFilters();
+              }}
+            >
+              <Text style={styles.clearFilterBtnText}>Reset Search & Filters</Text>
             </TouchableOpacity>
           )}
         </View>
@@ -443,16 +654,20 @@ export default function ExploreScreen() {
               {/* Sort Options */}
               <Text style={styles.filterSectionTitle}>Sort Order</Text>
               <View style={styles.chipRow}>
-                {(['relevance', 'newest'] as SortOption[]).map((sort) => {
-                  const active = tempFilters.sortBy === sort;
+                {[
+                  { id: 'relevance', label: 'Relevance' },
+                  { id: 'newest', label: 'Newest' },
+                  { id: 'title', label: 'Alphabetical' },
+                ].map((item) => {
+                  const active = tempFilters.sortBy === item.id;
                   return (
                     <TouchableOpacity
-                      key={sort}
+                      key={item.id}
                       style={[styles.chip, active && styles.chipActive]}
-                      onPress={() => setTempFilters({ ...tempFilters, sortBy: sort })}
+                      onPress={() => setTempFilters({ ...tempFilters, sortBy: item.id as SortOption })}
                     >
                       <Text style={[styles.chipText, active && styles.chipTextActive]}>
-                        {sort.charAt(0).toUpperCase() + sort.slice(1)}
+                        {item.label}
                       </Text>
                     </TouchableOpacity>
                   );
@@ -534,15 +749,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     marginHorizontal: 16,
-    marginBottom: 12,
-    gap: 10,
+    marginBottom: 8,
+    gap: 8,
   },
   searchBar: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    paddingHorizontal: 14,
+    paddingHorizontal: 12,
     height: 46,
     borderRadius: 14,
     backgroundColor: SURFACE,
@@ -552,9 +767,22 @@ const styles = StyleSheet.create({
   searchBarFocused: {
     borderColor: GOLD,
   },
-  searchInput: { flex: 1, color: TEXT, fontSize: 14 },
+  searchInput: {
+    flex: 1,
+    color: TEXT,
+    fontSize: 14,
+    paddingVertical: 0,
+  },
+  searchBtn: {
+    width: 44,
+    height: 46,
+    borderRadius: 14,
+    backgroundColor: GOLD,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   filterBtn: {
-    width: 46,
+    width: 44,
     height: 46,
     borderRadius: 14,
     backgroundColor: SURFACE,
@@ -578,8 +806,50 @@ const styles = StyleSheet.create({
     backgroundColor: '#ef4444',
   },
 
+  // Scope Selector Row
+  scopeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 16,
+    marginBottom: 10,
+    gap: 10,
+  },
+  scopeLabel: {
+    fontSize: 12,
+    color: MUTED,
+    fontWeight: '600',
+  },
+  scopeSegment: {
+    flexDirection: 'row',
+    backgroundColor: SURFACE,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: BORDER,
+    padding: 2,
+    gap: 2,
+  },
+  scopeBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 8,
+  },
+  scopeBtnActive: {
+    backgroundColor: `${GOLD}26`,
+    borderWidth: 1,
+    borderColor: GOLD,
+  },
+  scopeBtnText: {
+    fontSize: 12,
+    color: MUTED,
+    fontWeight: '500',
+  },
+  scopeBtnTextActive: {
+    color: GOLD,
+    fontWeight: '700',
+  },
+
   pillsWrapper: {
-    marginBottom: 14,
+    marginBottom: 8,
   },
   pills: {
     paddingHorizontal: 16,
@@ -600,6 +870,30 @@ const styles = StyleSheet.create({
   },
   pillText: { fontSize: 12, fontWeight: '500', color: MUTED },
   pillTextActive: { color: GOLD, fontWeight: '700' },
+
+  statusBar: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    marginBottom: 8,
+  },
+  resultsCount: {
+    fontSize: 12,
+    color: MUTED,
+    fontWeight: '500',
+  },
+  clearAllBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: 2,
+  },
+  clearAllText: {
+    fontSize: 12,
+    color: GOLD,
+    fontWeight: '600',
+  },
 
   centered: {
     flex: 1,

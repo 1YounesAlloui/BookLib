@@ -1,10 +1,21 @@
 import { Book, BookStatus } from '../components/BookDetailModal';
 
-export const BASE_URL = 'https://bookrating-orpin.vercel.app/api';
+export const LOCAL_URL = 'http://127.0.0.1:8000/api';
+export const REMOTE_URL = 'https://bookrating-orpin.vercel.app/api';
+
+export const BASE_URL =
+  process.env.EXPO_PUBLIC_API_URL ||
+  (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+    ? LOCAL_URL
+    : REMOTE_URL);
 
 export interface SearchParams {
   q?: string;
   search?: string;
+  title?: string;
+  author?: string;
+  type?: string;
+  scope?: string;
   genre?: string;
   category?: string;
   status?: string;
@@ -28,34 +39,80 @@ export interface HomeFeed {
   genres: Record<string, Book[]>;
 }
 
+// Stable client session identifier for shelf isolation (prevents cross-user tampering)
+const CLIENT_SESSION_STORAGE_KEY = 'bookrating_client_session_id';
+
+export function getClientSessionId(): string {
+  if (typeof window !== 'undefined' && window.localStorage) {
+    let id = window.localStorage.getItem(CLIENT_SESSION_STORAGE_KEY);
+    if (!id) {
+      id = 'cs_' + Math.random().toString(36).substring(2, 12) + '_' + Date.now().toString(36);
+      try {
+        window.localStorage.setItem(CLIENT_SESSION_STORAGE_KEY, id);
+      } catch {
+        // ignore storage errors
+      }
+    }
+    return id;
+  }
+  return 'cs_default_session';
+}
+
 export async function apiFetch<T>(
   endpoint: string,
   options: RequestInit = {}
 ): Promise<T> {
   const url = `${BASE_URL}${endpoint}`;
-  const response = await fetch(url, {
-    headers: {
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
-      ...options.headers,
-    },
-    ...options,
-  });
+  const secureHeaders: Record<string, string> = {
+    'Content-Type': 'application/json',
+    Accept: 'application/json',
+    'X-Session-ID': getClientSessionId(),
+  };
 
-  if (!response.ok) {
-    let errorDetail = `HTTP ${response.status}`;
-    try {
-      const errBody = await response.json();
-      if (errBody?.error || errBody?.message) {
-        errorDetail = errBody.error || errBody.message;
+  try {
+    const response = await fetch(url, {
+      ...options,
+      headers: {
+        ...secureHeaders,
+        ...options.headers,
+      },
+    });
+
+    if (!response.ok) {
+      let errorDetail = `HTTP ${response.status}`;
+      try {
+        const errBody = await response.json();
+        if (errBody?.error || errBody?.message) {
+          errorDetail = errBody.error || errBody.message;
+        }
+      } catch {
+        // ignore
       }
-    } catch {
-      // ignore
+      throw new Error(errorDetail);
     }
-    throw new Error(errorDetail);
-  }
 
-  return response.json();
+    return response.json();
+  } catch (err: any) {
+    // If local dev server is offline or network fails, try remote fallback if BASE_URL was local
+    if (BASE_URL === LOCAL_URL && !options.signal?.aborted) {
+      try {
+        const fallbackUrl = `${REMOTE_URL}${endpoint}`;
+        const fbResponse = await fetch(fallbackUrl, {
+          ...options,
+          headers: {
+            ...secureHeaders,
+            ...options.headers,
+          },
+        });
+        if (fbResponse.ok) {
+          return fbResponse.json();
+        }
+      } catch {
+        // ignore and throw original error
+      }
+    }
+    throw err;
+  }
 }
 
 /**
@@ -86,6 +143,19 @@ export async function searchBooks(
   const q = params.q || params.search;
   if (q && q.trim()) {
     queryParts.push(`q=${encodeURIComponent(q.trim())}`);
+  }
+
+  if (params.title && params.title.trim()) {
+    queryParts.push(`title=${encodeURIComponent(params.title.trim())}`);
+  }
+
+  if (params.author && params.author.trim()) {
+    queryParts.push(`author=${encodeURIComponent(params.author.trim())}`);
+  }
+
+  const type = params.type || params.scope;
+  if (type && type !== 'all') {
+    queryParts.push(`type=${encodeURIComponent(type.trim())}`);
   }
 
   const genre = params.genre || params.category;
@@ -148,17 +218,28 @@ export async function saveBookToShelf(
   status: BookStatus,
   rating: number = 0
 ): Promise<Book> {
+  const cleanTitle = String(book.title || 'Unknown Title').slice(0, 255);
+  const cleanAuthors = String(
+    Array.isArray(book.authors) ? book.authors.join(', ') : book.authors ?? ''
+  ).slice(0, 255);
+  const cleanCategories = String(
+    Array.isArray(book.categories) ? book.categories.join(', ') : book.categories ?? ''
+  ).slice(0, 255);
+  const cleanDesc = String(book.description ?? '').slice(0, 10000);
+  const cleanThumb = String(book.thumbnail ?? '').slice(0, 500);
+  const cleanRating = Math.max(0, Math.min(5, Number(rating) || 0));
+
   return apiFetch<Book>('/books/save/', {
     method: 'POST',
     body: JSON.stringify({
-      google_book_id: book.google_book_id,
-      title: book.title,
-      authors: Array.isArray(book.authors) ? book.authors.join(', ') : book.authors ?? '',
-      description: book.description ?? '',
-      thumbnail: book.thumbnail ?? '',
-      categories: Array.isArray(book.categories) ? book.categories.join(', ') : book.categories ?? '',
+      google_book_id: encodeURIComponent(book.google_book_id),
+      title: cleanTitle,
+      authors: cleanAuthors,
+      description: cleanDesc,
+      thumbnail: cleanThumb,
+      categories: cleanCategories,
       status,
-      rating,
+      rating: cleanRating,
     }),
   });
 }
