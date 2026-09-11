@@ -193,7 +193,8 @@ export async function fetchUserLibrary(signal?: AbortSignal): Promise<Book[]> {
 export async function saveBookToShelf(
   book: Book,
   status: BookStatus,
-  rating: number = 0
+  rating: number = 0,
+  review: string = ''
 ): Promise<Book> {
   return apiFetch<Book>('/books/save/', {
     method: 'POST',
@@ -206,22 +207,51 @@ export async function saveBookToShelf(
       categories: Array.isArray(book.categories) ? book.categories.join(', ') : book.categories ?? '',
       status,
       rating,
+      review,
     }),
   });
 }
 
 /**
- * Updates or removes status of an existing book on shelf.
+ * Updates or removes status, rating, and review of a book on the shelf.
  */
 export async function updateShelfStatus(
   googleBookId: string,
-  newStatus: BookStatus
-): Promise<{ message: string; status: BookStatus }> {
-  return apiFetch<{ message: string; status: BookStatus }>(
+  newStatus?: BookStatus,
+  rating?: number,
+  review?: string
+): Promise<any> {
+  return apiFetch<any>(
     `/books/${encodeURIComponent(googleBookId)}/status/`,
     {
       method: 'POST',
-      body: JSON.stringify({ status: newStatus }),
+      body: JSON.stringify({
+        status: newStatus,
+        rating,
+        review,
+      }),
     }
   );
+}
+
+/**
+ * Sends a user message to the chatbot and returns the AI reply.
+ * The backend session preserves history automatically.
+ */
+export async function sendChatMessage(
+  message: string,
+  signal?: AbortSignal
+): Promise<{ response: string }> {
+  return apiFetch<{ response: string }>('/chat/', {
+    method: 'POST',
+    body: JSON.stringify({ message }),
+    signal,
+  });
+}
+
+/**
+ * Clears the server-side session chat history.
+ */
+export async function clearChatHistory(): Promise<void> {
+  await apiFetch<{ status: string }>('/chat/clear/', { method: 'POST' });
 }

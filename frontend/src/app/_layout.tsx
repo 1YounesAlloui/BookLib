@@ -166,6 +166,21 @@ function InnerTabLayout() {
         />
 
         <Tabs.Screen
+          name="chat"
+          options={{
+            title: 'AI Chat',
+            headerTitle: 'Booklib AI',
+            tabBarIcon: ({ focused, color }) => (
+              <TabIcon
+                name={focused ? 'sparkles' : 'sparkles-outline'}
+                focused={focused}
+                color={color}
+              />
+            ),
+          }}
+        />
+
+        <Tabs.Screen
           name="library"
           options={{
             title: 'My Shelf',

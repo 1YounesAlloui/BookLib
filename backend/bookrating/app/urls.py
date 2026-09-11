@@ -9,4 +9,9 @@ urlpatterns = [
     path('books/shelf/', views.get_user_shelf),
     path('books/user/', views.get_user_library),
     path('books/<str:google_book_id>/status/', views.update_book_status),
+
+    # ── Chatbot ──────────────────────────────────────────────────────────
+    path('chat/', views.ChatbotView.as_view()),
+    path('chat/clear/', views.ClearChatView.as_view()),
+    path('chat/history/<int:index>/', views.LoadHistoryView.as_view()),
 ]

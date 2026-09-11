@@ -36,5 +36,27 @@ class UserBookSerializer(serializers.ModelSerializer):
             'categories',
             'status',
             'rating',
+            'review',
             'updated_at',
         ]
+
+
+class ChatMessageSerializer(serializers.Serializer):
+    """
+    Validates and sanitizes incoming chat messages before they reach the LLM.
+    - Rejects empty/whitespace-only input.
+    - Enforces a hard character limit to prevent prompt-stuffing attacks.
+    """
+
+    MAX_LENGTH = 2000  # characters
+
+    message = serializers.CharField(
+        min_length=1,
+        max_length=MAX_LENGTH,
+        trim_whitespace=True,
+        error_messages={
+            "blank": "Message cannot be empty.",
+            "max_length": f"Message must be {MAX_LENGTH} characters or fewer.",
+            "min_length": "Message cannot be empty.",
+        },
+    )

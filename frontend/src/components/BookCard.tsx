@@ -147,6 +147,24 @@ export const BookCard = memo(function BookCard({
           </View>
         )}
         <StatusBadge status={item.status} size={isGrid4 ? 'small' : 'default'} />
+        {typeof item.rating === 'number' && item.rating > 0 ? (
+          <View
+            style={[
+              styles.ratingBadge,
+              isGrid4 && styles.ratingBadgeSmall,
+            ]}
+          >
+            <Ionicons name="star" size={isGrid4 ? 8 : 10} color={GOLD} />
+            <Text
+              style={[
+                styles.ratingText,
+                isGrid4 && { fontSize: 8.5 },
+              ]}
+            >
+              {Number(item.rating).toFixed(1)}
+            </Text>
+          </View>
+        ) : null}
       </View>
 
       <View
@@ -198,5 +216,31 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  ratingBadge: {
+    position: 'absolute',
+    top: 6,
+    left: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: 'rgba(13, 13, 16, 0.85)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(200, 169, 110, 0.35)',
+  },
+  ratingBadgeSmall: {
+    top: 4,
+    left: 4,
+    paddingHorizontal: 4,
+    paddingVertical: 1,
+    borderRadius: 6,
+  },
+  ratingText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: GOLD,
   },
 });

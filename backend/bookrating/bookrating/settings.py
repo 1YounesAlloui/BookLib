@@ -135,4 +135,13 @@ REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.AllowAny',
     ],
+    'DEFAULT_THROTTLE_RATES': {
+        # 10 chatbot requests per minute per anonymous IP
+        'chatbot': '10/min',
+    },
 }
+
+# ── Session engine (used by ChatbotView to persist conversation history) ──
+SESSION_ENGINE = 'django.contrib.sessions.backends.db'
+SESSION_COOKIE_AGE = 86400  # 1 day
+SESSION_SAVE_EVERY_REQUEST = False

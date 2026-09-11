@@ -24,7 +24,8 @@ class UserBook(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, null=True, blank=True)
     book = models.ForeignKey(Book, on_delete=models.CASCADE, related_name='user_statuses')
     status = models.CharField(max_length=20, choices=STATUS_CHOICES)
-    rating = models.IntegerField(default=0)
+    rating = models.FloatField(default=0.0)
+    review = models.TextField(blank=True, default='')
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:

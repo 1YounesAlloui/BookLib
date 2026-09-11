@@ -3,6 +3,7 @@ import re
 import time
 import random
 import requests
+import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny
@@ -11,6 +12,16 @@ from rest_framework import status
 from django.db.models import Q
 from .models import Book, UserBook
 from .serializers import UserBookSerializer
+from rest_framework.views import APIView
+
+from .ai_engine import get_ai_response
+from .serializers import ChatMessageSerializer
+from .throttles import ChatbotThrottle
+
+
+
+logger = logging.getLogger(__name__)
+
 
 GOOGLE_BOOKS_API_KEY = os.getenv("GOOGLE_BOOKS_API_KEY", "")
 HEADERS = {'User-Agent': 'BookDiscoveryApp/1.0 (contact@example.com)'}
@@ -493,13 +504,20 @@ def search_google_books(request):
 def save_book_status(request):
     google_book_id = request.data.get('google_book_id')
     status_val = request.data.get('status')
-    rating_val = request.data.get('rating', 0)
+    rating_val = request.data.get('rating', 0.0)
+    review_val = request.data.get('review', '')
 
     if not google_book_id or not status_val:
         return Response(
             {"error": "google_book_id and status are required"},
             status=status.HTTP_400_BAD_REQUEST
         )
+
+    try:
+        rating_float = float(rating_val) if rating_val is not None else 0.0
+        rating_float = max(0.0, min(5.0, round(rating_float * 2) / 2))
+    except (ValueError, TypeError):
+        rating_float = 0.0
 
     book, _ = Book.objects.get_or_create(
         google_book_id=google_book_id,
@@ -515,7 +533,11 @@ def save_book_status(request):
     user_book, _ = UserBook.objects.update_or_create(
         user=None,
         book=book,
-        defaults={'status': status_val, 'rating': int(rating_val)}
+        defaults={
+            'status': status_val,
+            'rating': rating_float,
+            'review': str(review_val or ''),
+        }
     )
 
     return Response(UserBookSerializer(user_book).data, status=status.HTTP_200_OK)
@@ -548,6 +570,9 @@ def get_user_shelf(request):
 @permission_classes([AllowAny])
 def update_book_status(request, google_book_id):
     new_status = request.data.get('status')
+    rating_val = request.data.get('rating')
+    review_val = request.data.get('review')
+    remove_flag = request.data.get('remove', False)
 
     try:
         book = Book.objects.get(google_book_id=google_book_id)
@@ -559,7 +584,8 @@ def update_book_status(request, google_book_id):
 
     user_book = UserBook.objects.filter(user=None, book=book).first()
 
-    if not new_status:
+    # Explicit remove request or null status without rating/review
+    if remove_flag or (not new_status and rating_val is None and review_val is None):
         if user_book:
             user_book.delete()
         return Response(
@@ -571,19 +597,171 @@ def update_book_status(request, google_book_id):
         user_book = UserBook.objects.create(
             user=None,
             book=book,
-            status=new_status
+            status=new_status or 'TO_READ'
         )
-    elif user_book.status == new_status:
+    elif new_status and user_book.status == new_status and rating_val is None and review_val is None:
+        # Toggling current status off
         user_book.delete()
         return Response(
             {"message": "Book removed from shelf", "status": None},
             status=status.HTTP_200_OK
         )
-    else:
+    elif new_status:
         user_book.status = new_status
-        user_book.save()
 
-    return Response(
-        {"message": f"Book moved to {new_status}", "status": user_book.status},
-        status=status.HTTP_200_OK
-    )
+    if rating_val is not None:
+        try:
+            r = max(0.0, min(5.0, round(float(rating_val) * 2) / 2))
+            user_book.rating = r
+        except (ValueError, TypeError):
+            pass
+
+    if review_val is not None:
+        user_book.review = str(review_val)
+
+    user_book.save()
+
+    return Response(UserBookSerializer(user_book).data, status=status.HTTP_200_OK)
+
+
+#chatbot
+
+
+# ---------------------------------------------------------------------------
+# Chatbot API
+# ---------------------------------------------------------------------------
+
+class ChatbotView(APIView):
+    """
+    POST /api/chat/
+
+    Accept a user message, call the LLM, update session history, return reply.
+
+    Request body (JSON):
+        { "message": "<user text>" }
+
+    Response 200:
+        { "response": "<ai reply>" }
+
+    Response 400 (validation error):
+        { "message": ["<error detail>"] }
+
+    Response 429 (throttled):
+        { "detail": "Request was throttled." }
+
+    Response 503 (AI service error):
+        { "error": "<safe error message>" }
+    """
+
+    throttle_classes = [ChatbotThrottle]
+
+    def post(self, request):
+        serializer = ChatMessageSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        user_message = serializer.validated_data["message"]
+        history = request.session.get("chat_history", [])
+
+        # ── Build shelf context from the user's saved books ──────────────
+        shelf_context = ""
+        try:
+            user_books = UserBook.objects.select_related("book").order_by("-updated_at")[:30]
+            if user_books.exists():
+                lines = []
+                for ub in user_books:
+                    b = ub.book
+                    status_label = {
+                        "TO_READ": "wants to read",
+                        "FINISHED": "has finished reading",
+                        "FAVORITE": "marked as favourite",
+                    }.get(ub.status, ub.status)
+                    line = f'- "{b.title}" by {b.authors or "Unknown"} ({status_label})'
+                    if ub.rating and ub.rating > 0:
+                        line += f" [User Rating: {ub.rating}/5 stars]"
+                    if ub.review and ub.review.strip():
+                        line += f' [User Review: "{ub.review.strip()}"]'
+                    if b.categories:
+                        line += f" — genres: {b.categories}"
+                    lines.append(line)
+                shelf_context = "\n".join(lines)
+        except Exception as exc:
+            logger.warning("Could not build shelf context: %s", exc)
+
+        result = get_ai_response(user_message, history, shelf_context=shelf_context)
+
+        if not result["ok"]:
+            logger.warning("AI error returned to client: %s", result["error"])
+            return Response(
+                {"error": result["error"]},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+
+        bot_reply = result["content"]
+
+        # Persist conversation to session (keep last 10 entries = 5 pairs)
+        history.append({"role": "user", "content": user_message})
+        history.append({"role": "assistant", "content": bot_reply})
+        request.session["chat_history"] = history[-10:]
+        request.session.modified = True
+
+        return Response({"response": bot_reply}, status=status.HTTP_200_OK)
+
+
+class ClearChatView(APIView):
+    """
+    POST /api/chat/clear/
+
+    Clear the session's chat history (triggers "New Chat" on the frontend).
+
+    Response 200:
+        { "status": "ok" }
+    """
+
+    def post(self, request):
+        request.session.pop("chat_history", None)
+        return Response({"status": "ok"}, status=status.HTTP_200_OK)
+
+
+class LoadHistoryView(APIView):
+    """
+    GET /api/chat/history/<int:index>/
+
+    Replay a single exchange from session history by its pair index.
+    `index` refers to the position of the *user* message in the flat list.
+    A valid user-message index must be even (0, 2, 4, ...) and have a
+    corresponding assistant message at index+1.
+
+    Response 200:
+        { "user_message": "...", "bot_message": "..." }
+
+    Response 400 (invalid index):
+        { "error": "Invalid history index." }
+
+    Response 404 (not found):
+        { "error": "History entry not found." }
+    """
+
+    def get(self, request, index):
+        # Validate index is a non-negative even number (user-message positions)
+        if index < 0 or index % 2 != 0:
+            return Response(
+                {"error": "Invalid history index."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        history = request.session.get("chat_history", [])
+
+        try:
+            user_msg = history[index]["content"]
+            bot_msg = history[index + 1]["content"]
+        except (IndexError, KeyError):
+            return Response(
+                {"error": "History entry not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        return Response(
+            {"user_message": user_msg, "bot_message": bot_msg},
+            status=status.HTTP_200_OK,
+        )

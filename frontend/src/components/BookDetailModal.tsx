@@ -3,6 +3,7 @@ import {
   Modal,
   View,
   Text,
+  TextInput,
   TouchableOpacity,
   StyleSheet,
   ScrollView,
@@ -26,6 +27,7 @@ export interface Book {
   categories?: string;
   status?: BookStatus;
   rating?: number;
+  review?: string;
   updated_at?: string;
   publishedDate?: string;
 }
@@ -68,6 +70,155 @@ const SHELF_BUTTONS = [
   },
 ] as const;
 
+// ─── Half-Star Rating Component (0 to 5, step 0.5) ─────────────────────
+
+function StarRating({
+  rating,
+  onChange,
+  theme,
+}: {
+  rating: number;
+  onChange: (newRating: number) => void;
+  theme: any;
+}) {
+  const stars = [1, 2, 3, 4, 5];
+
+  const handleHalfStarPress = (target: number) => {
+    // If tapping the exact current value, reset to 0
+    if (rating === target) {
+      onChange(0);
+    } else {
+      onChange(target);
+    }
+  };
+
+  const stepDown = () => {
+    const next = Math.max(0, Math.round((rating - 0.5) * 2) / 2);
+    onChange(next);
+  };
+
+  const stepUp = () => {
+    const next = Math.min(5, Math.round((rating + 0.5) * 2) / 2);
+    onChange(next);
+  };
+
+  return (
+    <View style={ratingStyles.container}>
+      {/* Stars + Score Pill */}
+      <View style={ratingStyles.starsRow}>
+        <View style={ratingStyles.starsPill}>
+          {stars.map((starIndex) => {
+            const isFull = rating >= starIndex;
+            const isHalf = !isFull && rating >= starIndex - 0.5;
+            const iconName = isFull
+              ? 'star'
+              : isHalf
+              ? 'star-half'
+              : 'star-outline';
+            const iconColor = isFull || isHalf ? GOLD : theme.subtle;
+
+            return (
+              <View key={starIndex} style={ratingStyles.starWrapper}>
+                {/* Visual Star */}
+                <Ionicons name={iconName} size={30} color={iconColor} />
+
+                {/* Left touch target: sets (starIndex - 0.5) */}
+                <TouchableOpacity
+                  style={ratingStyles.touchHalfLeft}
+                  activeOpacity={0.5}
+                  onPress={() => handleHalfStarPress(starIndex - 0.5)}
+                  hitSlop={{ top: 8, bottom: 8, left: 2, right: 0 }}
+                />
+
+                {/* Right touch target: sets (starIndex) */}
+                <TouchableOpacity
+                  style={ratingStyles.touchHalfRight}
+                  activeOpacity={0.5}
+                  onPress={() => handleHalfStarPress(starIndex)}
+                  hitSlop={{ top: 8, bottom: 8, left: 0, right: 2 }}
+                />
+              </View>
+            );
+          })}
+        </View>
+
+        {/* Score Display Badge */}
+        <View
+          style={[
+            ratingStyles.scoreBadge,
+            {
+              backgroundColor: rating > 0 ? `${GOLD}18` : theme.surfaceLight,
+              borderColor: rating > 0 ? `${GOLD}60` : theme.border,
+            },
+          ]}
+        >
+          <Text
+            style={[
+              ratingStyles.scoreText,
+              { color: rating > 0 ? GOLD : theme.muted },
+            ]}
+          >
+            {rating > 0 ? `${rating.toFixed(1)} ★` : '0.0 ★'}
+          </Text>
+        </View>
+      </View>
+
+      {/* Stepper + Clear row */}
+      <View style={ratingStyles.controlsRow}>
+        <TouchableOpacity
+          style={[
+            ratingStyles.stepBtn,
+            { backgroundColor: theme.surfaceLight, borderColor: theme.border },
+            rating <= 0 && { opacity: 0.35 },
+          ]}
+          onPress={stepDown}
+          disabled={rating <= 0}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="remove" size={13} color={theme.text} />
+          <Text style={[ratingStyles.stepBtnText, { color: theme.text }]}>
+            -0.5
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[
+            ratingStyles.stepBtn,
+            { backgroundColor: theme.surfaceLight, borderColor: theme.border },
+            rating >= 5 && { opacity: 0.35 },
+          ]}
+          onPress={stepUp}
+          disabled={rating >= 5}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="add" size={13} color={theme.text} />
+          <Text style={[ratingStyles.stepBtnText, { color: theme.text }]}>
+            +0.5
+          </Text>
+        </TouchableOpacity>
+
+        {rating > 0 && (
+          <TouchableOpacity
+            style={[
+              ratingStyles.clearBtn,
+              { backgroundColor: theme.surfaceLight, borderColor: theme.border },
+            ]}
+            onPress={() => onChange(0)}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="close-circle-outline" size={13} color={theme.muted} />
+            <Text style={[ratingStyles.clearBtnText, { color: theme.muted }]}>
+              Clear (0★)
+            </Text>
+          </TouchableOpacity>
+        )}
+      </View>
+    </View>
+  );
+}
+
+// ─── Main Modal Component ─────────────────────────────────────────────
+
 export const BookDetailModal: React.FC<BookDetailModalProps> = ({
   visible,
   book,
@@ -76,15 +227,26 @@ export const BookDetailModal: React.FC<BookDetailModalProps> = ({
 }) => {
   const { theme } = useTheme();
   const [currentStatus, setCurrentStatus] = useState<BookStatus>(null);
+  const [currentRating, setCurrentRating] = useState<number>(0);
+  const [currentReview, setCurrentReview] = useState<string>('');
   const [loadingStatus, setLoadingStatus] = useState<BookStatus>(null);
+  const [savingReview, setSavingReview] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [savedFeedback, setSavedFeedback] = useState<string | null>(null);
   const [savedBookId, setSavedBookId] = useState<number | undefined>(undefined);
 
   useEffect(() => {
     if (book) {
       setCurrentStatus(book.status ?? null);
+      setCurrentRating(
+        typeof book.rating === 'number' && !isNaN(book.rating)
+          ? book.rating
+          : 0
+      );
+      setCurrentReview(book.review ?? '');
       setSavedBookId(book.id);
       setErrorMsg(null);
+      setSavedFeedback(null);
     }
   }, [book]);
 
@@ -107,18 +269,114 @@ export const BookDetailModal: React.FC<BookDetailModalProps> = ({
           await onStatusChange(book.google_book_id, null);
           return;
         }
-        const saved = await saveBookToShelf(book, nextStatus);
+        const saved = await saveBookToShelf(
+          book,
+          nextStatus,
+          currentRating,
+          currentReview
+        );
         setSavedBookId(saved.id);
-        await onStatusChange(book.google_book_id, nextStatus, saved);
+        await onStatusChange(book.google_book_id, nextStatus, {
+          ...book,
+          ...saved,
+          status: nextStatus,
+          rating: currentRating,
+          review: currentReview,
+        });
       } else {
-        await updateShelfStatus(book.google_book_id, nextStatus);
-        await onStatusChange(book.google_book_id, nextStatus);
+        await updateShelfStatus(
+          book.google_book_id,
+          nextStatus,
+          currentRating,
+          currentReview
+        );
+        await onStatusChange(book.google_book_id, nextStatus, {
+          ...book,
+          status: nextStatus,
+          rating: currentRating,
+          review: currentReview,
+        });
       }
     } catch (err: any) {
       setCurrentStatus(previousStatus);
       setErrorMsg(err.message || 'Failed to update shelf. Please try again.');
     } finally {
       setLoadingStatus(null);
+    }
+  };
+
+  const handleRatingChange = async (newRating: number) => {
+    setCurrentRating(newRating);
+    setErrorMsg(null);
+
+    // If book is already saved on shelf, persist the rating immediately
+    if (savedBookId && currentStatus) {
+      try {
+        await updateShelfStatus(
+          book.google_book_id,
+          currentStatus,
+          newRating,
+          currentReview
+        );
+        await onStatusChange(book.google_book_id, currentStatus, {
+          ...book,
+          status: currentStatus,
+          rating: newRating,
+          review: currentReview,
+        });
+        setSavedFeedback(newRating > 0 ? `Rated ${newRating}★` : 'Rating cleared');
+        setTimeout(() => setSavedFeedback(null), 2200);
+      } catch (err: any) {
+        setErrorMsg(err.message || 'Failed to update rating.');
+      }
+    }
+  };
+
+  const handleSaveReviewAndRating = async () => {
+    setSavingReview(true);
+    setErrorMsg(null);
+    setSavedFeedback(null);
+
+    const targetStatus = currentStatus ?? 'FINISHED';
+
+    try {
+      if (!savedBookId) {
+        const saved = await saveBookToShelf(
+          book,
+          targetStatus,
+          currentRating,
+          currentReview
+        );
+        setSavedBookId(saved.id);
+        setCurrentStatus(targetStatus);
+        await onStatusChange(book.google_book_id, targetStatus, {
+          ...book,
+          ...saved,
+          status: targetStatus,
+          rating: currentRating,
+          review: currentReview,
+        });
+      } else {
+        const updated = await updateShelfStatus(
+          book.google_book_id,
+          targetStatus,
+          currentRating,
+          currentReview
+        );
+        await onStatusChange(book.google_book_id, targetStatus, {
+          ...book,
+          ...(typeof updated === 'object' ? updated : {}),
+          status: targetStatus,
+          rating: currentRating,
+          review: currentReview,
+        });
+      }
+      setSavedFeedback('Rating & review saved!');
+      setTimeout(() => setSavedFeedback(null), 2500);
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Failed to save review.');
+    } finally {
+      setSavingReview(false);
     }
   };
 
@@ -243,7 +501,7 @@ export const BookDetailModal: React.FC<BookDetailModalProps> = ({
               )}
             </View>
 
-            {/* Error */}
+            {/* Error Message */}
             {errorMsg && (
               <View style={styles.errorBox}>
                 <Ionicons name="alert-circle" size={16} color="#ef4444" />
@@ -304,6 +562,102 @@ export const BookDetailModal: React.FC<BookDetailModalProps> = ({
               )}
             </View>
 
+            {/* ── Star Rating Section (0 to 5, step 0.5) ────────────────── */}
+            <View style={styles.ratingSectionContainer}>
+              <View style={styles.sectionHeadingRow}>
+                <Text style={[styles.sectionHeading, { color: theme.muted, marginBottom: 0 }]}>
+                  Rating (0 – 5 ★)
+                </Text>
+                <Text style={[styles.sectionHint, { color: theme.subtle }]}>
+                  Tap half / full star
+                </Text>
+              </View>
+
+              <StarRating
+                rating={currentRating}
+                onChange={handleRatingChange}
+                theme={theme}
+              />
+            </View>
+
+            {/* ── Review & Personal Notes Section ─────────────────────── */}
+            <View style={styles.reviewSectionContainer}>
+              <View style={styles.sectionHeadingRow}>
+                <Text style={[styles.sectionHeading, { color: theme.muted, marginBottom: 0 }]}>
+                  My Review & Notes
+                </Text>
+                <Text style={[styles.sectionHint, { color: theme.subtle }]}>
+                  {currentReview.length}/1000
+                </Text>
+              </View>
+
+              <View
+                style={[
+                  styles.reviewInputBox,
+                  {
+                    backgroundColor: theme.surfaceLight,
+                    borderColor: theme.border,
+                  },
+                ]}
+              >
+                <TextInput
+                  style={[styles.reviewInput, { color: theme.text }]}
+                  multiline
+                  numberOfLines={4}
+                  maxLength={1000}
+                  placeholder="What did you think of this book? Write your review, quotes, or thoughts…"
+                  placeholderTextColor={theme.muted}
+                  value={currentReview}
+                  onChangeText={setCurrentReview}
+                  textAlignVertical="top"
+                />
+              </View>
+
+              {/* Review Actions */}
+              <View style={styles.reviewActionsRow}>
+                {savedFeedback ? (
+                  <View style={styles.feedbackRow}>
+                    <Ionicons
+                      name="checkmark-circle"
+                      size={15}
+                      color="#10b981"
+                    />
+                    <Text style={styles.feedbackText}>{savedFeedback}</Text>
+                  </View>
+                ) : (
+                  <View style={{ flex: 1 }} />
+                )}
+
+                <TouchableOpacity
+                  style={[
+                    styles.saveReviewBtn,
+                    {
+                      backgroundColor: GOLD,
+                      opacity: savingReview ? 0.7 : 1,
+                    },
+                  ]}
+                  onPress={handleSaveReviewAndRating}
+                  disabled={savingReview}
+                  activeOpacity={0.8}
+                >
+                  {savingReview ? (
+                    <ActivityIndicator size="small" color="#0d0d10" />
+                  ) : (
+                    <>
+                      <Ionicons
+                        name="cloud-upload-outline"
+                        size={15}
+                        color="#0d0d10"
+                      />
+                      <Text style={styles.saveReviewBtnText}>
+                        Save Review & Rating
+                      </Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </View>
+
             {/* Description */}
             <View style={styles.descriptionSection}>
               <Text style={[styles.sectionHeading, { color: theme.muted }]}>
@@ -317,13 +671,100 @@ export const BookDetailModal: React.FC<BookDetailModalProps> = ({
               </Text>
             </View>
 
-            <View style={{ height: 28 }} />
+            <View style={{ height: 32 }} />
           </ScrollView>
         </View>
       </View>
     </Modal>
   );
 };
+
+// ─── Rating Styles ────────────────────────────────────────────────────
+
+const ratingStyles = StyleSheet.create({
+  container: {
+    paddingTop: 4,
+  },
+  starsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  starsPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  starWrapper: {
+    width: 34,
+    height: 34,
+    justifyContent: 'center',
+    alignItems: 'center',
+    position: 'relative',
+  },
+  touchHalfLeft: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: '50%',
+    zIndex: 2,
+  },
+  touchHalfRight: {
+    position: 'absolute',
+    right: 0,
+    top: 0,
+    bottom: 0,
+    width: '50%',
+    zIndex: 2,
+  },
+  scoreBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  scoreText: {
+    fontSize: 13,
+    fontWeight: '700',
+    letterSpacing: 0.3,
+  },
+  controlsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 8,
+  },
+  stepBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  stepBtnText: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  clearBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    borderRadius: 8,
+    borderWidth: 1,
+    marginLeft: 'auto',
+  },
+  clearBtnText: {
+    fontSize: 11,
+    fontWeight: '500',
+  },
+});
+
+// ─── Modal Styles ─────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
   overlay: {
@@ -435,10 +876,20 @@ const styles = StyleSheet.create({
     letterSpacing: 0.6,
     marginBottom: 10,
   },
+  sectionHeadingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  sectionHint: {
+    fontSize: 11,
+    fontWeight: '500',
+  },
   actionContainer: {
     flexDirection: 'row',
     gap: 8,
-    marginBottom: 24,
+    marginBottom: 20,
     width: '100%',
   },
   statusButton: {
@@ -456,6 +907,60 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
   },
+
+  // Rating Container
+  ratingSectionContainer: {
+    marginBottom: 20,
+  },
+
+  // Review Container
+  reviewSectionContainer: {
+    marginBottom: 22,
+  },
+  reviewInputBox: {
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    minHeight: 88,
+  },
+  reviewInput: {
+    fontSize: 13.5,
+    lineHeight: 20,
+    minHeight: 72,
+  },
+  reviewActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 8,
+  },
+  feedbackRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    flex: 1,
+  },
+  feedbackText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#10b981',
+  },
+  saveReviewBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 10,
+    marginLeft: 'auto',
+  },
+  saveReviewBtnText: {
+    color: '#0d0d10',
+    fontSize: 12.5,
+    fontWeight: '700',
+  },
+
   descriptionSection: {
     width: '100%',
   },
